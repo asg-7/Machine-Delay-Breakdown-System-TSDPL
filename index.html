@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>TSDPL – Production Analytics Dashboard</title>
+<!-- CDN libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Extracted Stylesheet -->
+<link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">TS</div>
+    <div>
+      <div class="logo-text">TSDPL KALINGANAGAR</div>
+      <div class="logo-sub">PRODUCTION ANALYTICS DASHBOARD · v1.0</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="header-stat" style="margin-right: 12px; border-right: 1px solid var(--border); padding-right: 16px;">
+      <div class="header-stat-val" style="color: var(--text);" id="hdr-datetime">19.05.2026 / SHIFT A</div>
+      <div class="header-stat-lbl">CURRENT SYSTEM TIME</div>
+    </div>
+    <div class="live-badge"><div class="live-dot"></div>LIVE DATA</div>
+    <!-- Header KPIs removed per user request -->
+  </div>
+</div>
+
+<!-- NAV -->
+<div class="nav">
+  <div class="tab active" data-page="upload">UPLOAD DATA</div>
+  <div class="tab" data-page="overview">OVERVIEW</div>
+  <div class="tab" data-page="production">PRODUCTION</div>
+  <div class="tab" data-page="delays">DELAY ANALYSIS</div>
+  <div class="tab" data-page="maintenance">MAINTENANCE</div>
+  <div class="tab" data-page="availability">AVAILABILITY</div>
+  <div class="tab" data-page="ml">ML PREDICTIONS</div>
+</div>
+
+<!-- FILTERS -->
+<div class="filters" id="filter-bar">
+  <div class="filter-group">
+    <div class="filter-label">LINE / MACHINE</div>
+    <select id="f-machine">
+      <option value="ALL">ALL LINES</option>
+      <option value="WCTL-1">WCTL-1</option>
+      <option value="WCTL-2">WCTL-2</option>
+      <option value="SLITTER">SLITTER</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <div class="filter-label">SHIFT</div>
+    <select id="f-shift">
+      <option value="ALL">ALL SHIFTS</option>
+      <option value="A">A – MORNING</option>
+      <option value="B">B – AFTERNOON</option>
+      <option value="C">C – NIGHT</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <div class="filter-label">SHIFT INCHARGE</div>
+    <select id="f-incharge">
+      <option value="ALL">ALL INCHARGES</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <div class="filter-label">DATE FROM</div>
+    <input type="text" id="f-date-from" placeholder="e.g. 01.10.2025"/>
+  </div>
+  <div class="filter-group">
+    <div class="filter-label">DATE TO</div>
+    <input type="text" id="f-date-to" placeholder="e.g. 14.05.2026"/>
+  </div>
+  <div class="filter-group">
+    <div class="filter-label">DELAY TYPE</div>
+    <select id="f-delay">
+      <option value="ALL">ALL DELAY TYPES</option>
+    </select>
+  </div>
+  <div style="display:flex;gap:8px;align-self:flex-end;">
+    <button class="filter-btn" id="apply-btn">APPLY</button>
+    <button class="filter-btn reset" id="reset-btn">RESET</button>
+  </div>
+</div>
+
+<!-- PAGES -->
+<div class="main">
+
+<!-- ═══════════════ OVERVIEW PAGE ═══════════════ -->
+<div class="page" id="page-overview">
+  <div class="kpi-row" id="kpi-overview"></div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">PRODUCTION TREND – TONNAGE BY DATE <span class="badge">LINE COMPARISON</span></div>
+      <div class="line-toggle" id="overview-line-toggle"></div>
+      <div class="chart-wrap"><canvas id="chart-overview-trend"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">DELAY COMPOSITION BY LINE <span class="badge">PARETO</span></div>
+      <div class="chart-wrap"><canvas id="chart-overview-pareto"></canvas></div>
+    </div>
+  </div>
+  <div class="section-grid g3" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">SHIFT-WISE TONNAGE SHARE</div>
+      <div class="chart-wrap short"><canvas id="chart-shift-doughnut"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">TEAM-WISE TONNAGE</div>
+      <div class="chart-wrap short"><canvas id="chart-team-bar"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">AVAILABILITY OVERVIEW</div>
+      <div class="avail-grid" id="avail-mini"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ PRODUCTION PAGE ═══════════════ -->
+<div class="page" id="page-production">
+  <div class="kpi-row" id="kpi-production"></div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">HIGHEST PRODUCTION BY SHIFT INCHARGE</div>
+      <div class="chart-wrap tall"><canvas id="chart-prod-incharge"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">DAILY TONNAGE – ALL LINES</div>
+      <div class="chart-wrap tall"><canvas id="chart-prod-daily"></canvas></div>
+    </div>
+  </div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">SHIFT A/B/C COMPARISON – BEST SHIFT PER LINE</div>
+      <div class="chart-wrap"><canvas id="chart-shift-compare"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">TEAM-WISE TONNAGE ANALYSIS</div>
+      <div class="chart-wrap"><canvas id="chart-team-tonnage"></canvas></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">PRODUCTION LOG – SHIFT ENTRIES</div>
+    <div style="display:flex;gap:10px;margin-bottom:8px;">
+      <input type="text" id="prod-search" placeholder="🔍 Search by incharge, team, date..."/>
+      <select id="prod-filter-role">
+        <option value="ALL">All Users</option>
+        <option value="SUPERVISOR">Shift Supervisor Only</option>
+      </select>
+    </div>
+    <div class="tbl-wrap">
+      <table id="prod-table">
+        <thead><tr>
+          <th>DATE</th><th>MACHINE</th><th>SHIFT</th><th>INCHARGE</th><th>TEAM</th>
+          <th>COILS</th><th>TONNAGE (MT)</th><th>TOTAL DELAY (min)</th><th>AVAILABILITY</th>
+        </tr></thead>
+        <tbody id="prod-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ DELAY PAGE ═══════════════ -->
+<div class="page" id="page-delays">
+  <div class="kpi-row" id="kpi-delays"></div>
+  <div class="section-grid g12" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">PARETO – TOP DELAY TYPES BY TOTAL TIME <span class="badge">80/20</span></div>
+      <div class="pareto-wrap"><canvas id="chart-pareto-main"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">DELAY TYPE DISTRIBUTION</div>
+      <div class="chart-wrap"><canvas id="chart-delay-pie"></canvas></div>
+    </div>
+  </div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">HEATMAP – DELAY TIME BY INCHARGE × DELAY TYPE</div>
+      <div id="heatmap-delay" style="overflow-x:auto;"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">DELAY TREND OVER TIME – TOP 5 TYPES</div>
+      <div class="chart-wrap tall"><canvas id="chart-delay-trend"></canvas></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">DELAY LOG – DETAILED BREAKDOWN</div>
+    <div class="tbl-wrap">
+      <table id="delay-table">
+        <thead><tr>
+          <th>DATE</th><th>MACHINE</th><th>SHIFT</th><th>INCHARGE</th>
+          <th>DELAY TYPE</th><th>TIME (min)</th><th>DESCRIPTION</th><th>CATEGORY</th>
+        </tr></thead>
+        <tbody id="delay-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MAINTENANCE PAGE ═══════════════ -->
+<div class="page" id="page-maintenance">
+  <div class="kpi-row" id="kpi-maintenance"></div>
+  <div class="mtbf-row" id="mtbf-cards" style="margin-top:16px;"></div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">MAINTENANCE BREAKDOWN FREQUENCY BY MACHINE</div>
+      <div class="chart-wrap"><canvas id="chart-maint-freq"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">BREAKDOWN DURATION TREND</div>
+      <div class="chart-wrap"><canvas id="chart-maint-trend"></canvas></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">BREAKDOWN HISTORY LOG</div>
+    <div class="tbl-wrap">
+      <table id="maint-table">
+        <thead><tr>
+          <th>DATE</th><th>MACHINE</th><th>SHIFT</th><th>INCHARGE</th>
+          <th>BREAKDOWN TYPE</th><th>DURATION (min)</th><th>DESCRIPTION</th>
+        </tr></thead>
+        <tbody id="maint-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ AVAILABILITY PAGE ═══════════════ -->
+<div class="page" id="page-availability">
+  <div class="kpi-row" id="kpi-avail"></div>
+  <div class="section-grid g3" style="margin-top:16px;">
+    <div class="card" id="avail-card-wctl1"><div class="card-title">WCTL-1 AVAILABILITY</div><div class="chart-wrap"><canvas id="chart-avail-wctl1"></canvas></div></div>
+    <div class="card" id="avail-card-wctl2"><div class="card-title">WCTL-2 AVAILABILITY</div><div class="chart-wrap"><canvas id="chart-avail-wctl2"></canvas></div></div>
+    <div class="card" id="avail-card-slit"><div class="card-title">SLITTER AVAILABILITY</div><div class="chart-wrap"><canvas id="chart-avail-slit"></canvas></div></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">AVAILABILITY HEATMAP – BY DATE × MACHINE</div>
+    <div id="heatmap-avail" style="overflow-x:auto;padding:4px;"></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">PIVOT – AVAILABILITY BY SHIFT × INCHARGE</div>
+    <div class="pivot-table"><div class="tbl-wrap" id="pivot-avail"></div></div>
+  </div>
+</div>
+
+<!-- ═══════════════ ML PREDICTIONS PAGE ═══════════════ -->
+<div class="page" id="page-ml">
+  <div class="kpi-row" id="kpi-ml"></div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">NEXT BREAKDOWN PREDICTION <span class="badge">ML</span></div>
+      <div class="pred-card" id="pred-next"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">MTTR / MTBF / MTTF BY MACHINE <span class="badge">CALCULATED</span></div>
+      <div class="chart-wrap"><canvas id="chart-ml-mttr"></canvas></div>
+    </div>
+  </div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">BREAKDOWN FREQUENCY – ROLLING 7-DAY WINDOW</div>
+      <div class="chart-wrap"><canvas id="chart-ml-rolling"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">RISK SCORE TREND BY MACHINE</div>
+      <div class="chart-wrap"><canvas id="chart-ml-risk"></canvas></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">ML INSIGHTS & RECOMMENDATIONS <span class="badge">AI</span></div>
+    <div id="ml-insights" style="padding:8px 0;"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ UPLOAD PAGE ═══════════════ -->
+<div class="page active" id="page-upload">
+  <div class="upload-channels" id="upload-channels">
+    <div class="upload-channel" id="ch-slitter" onclick="document.getElementById('inp-slitter').click()">
+      <div class="channel-name" style="color:var(--accent)">SLITTER</div>
+      <div class="channel-status">Click to upload delay report</div>
+      <div class="channel-count" id="cnt-slitter">—</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Accepts .xlsx / .csv</div>
+      <input type="file" id="inp-slitter" accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'SLITTER')"/>
+    </div>
+    <div class="upload-channel" id="ch-wctl1" onclick="document.getElementById('inp-wctl1').click()">
+      <div class="channel-name" style="color:var(--accent2)">WCTL-1</div>
+      <div class="channel-status">Click to upload delay report</div>
+      <div class="channel-count" id="cnt-wctl1">—</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Accepts .xlsx / .csv</div>
+      <input type="file" id="inp-wctl1" accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'WCTL-1')"/>
+    </div>
+    <div class="upload-channel" id="ch-wctl2" onclick="document.getElementById('inp-wctl2').click()">
+      <div class="channel-name" style="color:var(--accent3)">WCTL-2</div>
+      <div class="channel-status">Click to upload delay report</div>
+      <div class="channel-count" id="cnt-wctl2">—</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Accepts .xlsx / .csv</div>
+      <input type="file" id="inp-wctl2" accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'WCTL-2')"/>
+    </div>
+  </div>
+  <div class="card" style="margin-top:20px;">
+    <div class="card-title">UPLOAD STATUS</div>
+    <div id="upload-status" style="font-family:var(--font-mono);font-size:12px;color:var(--muted);min-height:60px;"></div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<!-- Modular JS files loaded in dependency order -->
+<script src="js/charts.js?v=1.0.3"></script>
+<script src="js/filters.js?v=1.0.3"></script>
+<script src="js/analytics.js?v=1.0.3"></script>
+<script src="js/parser.js?v=1.0.3"></script>
+<script src="js/app.js?v=1.0.3"></script>
+</body>
+</html>
