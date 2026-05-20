@@ -253,15 +253,23 @@
   <div class="kpi-row" id="kpi-ml"></div>
   <div class="section-grid g2" style="margin-top:16px;">
     <div class="card">
-      <div class="card-title">NEXT BREAKDOWN PREDICTION <span class="badge">ML</span></div>
+      <div class="card-title">NEXT BREAKDOWN PREDICTION (HEURISTIC) <span class="badge">EWA</span></div>
       <div class="pred-card" id="pred-next"></div>
     </div>
+    <div class="card">
+      <div class="card-title">API PREDICTED REMAINING USEFUL LIFE (RUL) <span class="badge">REGRESSION</span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div id="rul-card-wctl1"></div>
+        <div id="rul-card-wctl2"></div>
+        <div id="rul-card-slitter"></div>
+      </div>
+    </div>
+  </div>
+  <div class="section-grid g3" style="margin-top:16px;">
     <div class="card">
       <div class="card-title">MTTR / MTBF / MTTF BY MACHINE <span class="badge">CALCULATED</span></div>
       <div class="chart-wrap"><canvas id="chart-ml-mttr"></canvas></div>
     </div>
-  </div>
-  <div class="section-grid g2" style="margin-top:16px;">
     <div class="card">
       <div class="card-title">BREAKDOWN FREQUENCY – ROLLING 7-DAY WINDOW</div>
       <div class="chart-wrap"><canvas id="chart-ml-rolling"></canvas></div>
@@ -313,6 +321,7 @@
 <!-- Modular JS files loaded in dependency order -->
 <script src="js/charts.js?v=1.0.3"></script>
 <script src="js/filters.js?v=1.0.3"></script>
+<script src="js/rul_client.js"></script>
 <script src="js/analytics.js?v=1.0.3"></script>
 <script src="js/parser.js?v=1.0.3"></script>
 <script src="js/app.js?v=1.0.3"></script>

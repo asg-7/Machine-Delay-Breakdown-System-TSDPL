@@ -68,6 +68,23 @@ function updateHeader(){
   // to avoid errors where callers expect updateHeader to exist.
 }
 
+async function runAnomalyDetection(shiftRecords) {
+  try {
+    const res = await fetch('http://localhost:8000/api/anomaly/detect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(shiftRecords)
+    });
+    const { results, anomaly_count } = await res.json();
+    // Store on window for analytics.js to consume
+    window.ANOMALY_RESULTS = results;
+    window.ANOMALY_COUNT = anomaly_count;
+    console.log(`Anomaly detection complete: ${anomaly_count} flagged shifts`);
+  } catch (e) {
+    console.warn('Anomaly detection unavailable (is the FastAPI server running?)', e);
+  }
+}
+
 window.addEventListener('DOMContentLoaded',()=>{
   populateFilters();
   applyFilters();

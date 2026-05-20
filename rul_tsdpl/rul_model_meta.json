@@ -1,0 +1,40 @@
+{
+  "feature_cols": [
+    "mtbf_days",
+    "mtbf_std",
+    "mtbf_trend",
+    "mttr_min",
+    "days_since_last_bd",
+    "bd_freq_30d",
+    "avg_avail_7d",
+    "avg_avail_30d",
+    "avg_tonnage_7d",
+    "delay_min_7d",
+    "delay_min_30d",
+    "delay_diversity",
+    "machine_id"
+  ],
+  "target": "rul_days",
+  "n_training_rows": 402,
+  "cv_mae_mean": 0.15,
+  "cv_mae_std": 0.13,
+  "cv_r2_mean": -0.04,
+  "feature_importance": {
+    "mtbf_days": 0.0,
+    "mtbf_std": 0.0,
+    "mtbf_trend": 0.0,
+    "mttr_min": 0.0,
+    "days_since_last_bd": 0.0,
+    "bd_freq_30d": 0.0,
+    "avg_avail_7d": 0.0,
+    "avg_avail_30d": 0.0,
+    "avg_tonnage_7d": 0.0,
+    "delay_min_7d": 0.0,
+    "delay_min_30d": 0.0,
+    "delay_diversity": 0.0,
+    "machine_id": 0.0
+  },
+  "y_min": 1.0,
+  "y_max": 28.0,
+  "y_mean": 1.2
+}

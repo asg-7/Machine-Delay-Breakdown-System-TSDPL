@@ -906,4 +906,9 @@ function renderML(){
       For production deployment, integrate LSTM/Random Forest on full sensor data for higher accuracy.
     </div>
   `;
+  
+  // Call the FastAPI-based RUL predictions
+  if (typeof renderRULPredictions === 'function') {
+    renderRULPredictions();
+  }
 }
