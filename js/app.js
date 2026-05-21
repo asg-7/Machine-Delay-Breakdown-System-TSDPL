@@ -1,5 +1,7 @@
 // Global State Repository
-var RAW_DATA = [];
+if (typeof RAW_DATA === 'undefined') {
+  var RAW_DATA = [];
+}
 let filteredData = [];
 
 function updateClock() {

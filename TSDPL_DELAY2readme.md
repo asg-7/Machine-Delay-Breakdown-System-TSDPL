@@ -39,7 +39,7 @@ TSDPL_DELAY2 is a full-stack delay analysis and predictive maintenance system co
 ```
 TSDPL_DELAY2/
 |
-|-- index.html                          # Main dashboard entry point
+|-- TSDPL_Dashboard.html                # Main dashboard entry point (modularized)
 |-- README.md                           # Original readme
 |-- TSDPL_DELAY2readme.md              # This file (updated readme)
 |
@@ -47,6 +47,7 @@ TSDPL_DELAY2/
 |   |-- style.css                       # Full design system (dark theme, KPI cards, charts, ML cards)
 |
 |-- js/
+|   |-- data.js                         # Out-of-the-box mock dataset (window.RAW_DATA)
 |   |-- app.js                          # Boot loader, tab switching, RAW_DATA global state, anomaly detection
 |   |-- parser.js                       # SheetJS Excel parser (populates RAW_DATA[])
 |   |-- filters.js                      # Data normalization, machine/shift/date filtering
@@ -169,7 +170,7 @@ curl http://localhost:8000/health
 
 ### Step 4: Open the Dashboard
 
-Open `index.html` directly in a browser (no web server needed for the frontend).
+Open `TSDPL_Dashboard.html` directly in a browser (no web server needed for the frontend).
 
 1. Navigate to the **UPLOAD** tab
 2. Upload the Excel files from `sampledata/` (one per machine channel)
@@ -685,7 +686,7 @@ Get current model metadata.
 | "Anomaly detection unavailable" in console | FastAPI server is not running or not accessible on port 8000. Start it with `python -m uvicorn api:app --host 127.0.0.1 --port 8000` |
 | Anomaly tests fail with import errors | Run `pip install -r anomaly_detector/requirements.txt` first to install dependencies. |
 | "No data uploaded" on ML page | Upload Excel files on the UPLOAD tab before switching to ML PREDICTIONS. |
-| CORS errors in browser | The API server has CORS enabled for all origins (`*`). If issues persist, serve `index.html` via a local HTTP server. |
+| CORS errors in browser | The API server has CORS enabled for all origins (`*`). If issues persist, serve `TSDPL_Dashboard.html` via a local HTTP server. |
 | Low R-squared in training | Expected with limited industrial data. The model improves as more shift reports are collected over time. |
 | Models not persisting after restart | Check that `anomaly_detector/models/` directory has write permissions. Models are auto-saved on retrain. |
 
