@@ -4,11 +4,483 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>TSDPL – Production Analytics Dashboard</title>
-<!-- CDN libraries -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<!-- Extracted Stylesheet -->
-<link rel="stylesheet" href="css/style.css"/>
+<style>
+/* ══════════════════════════════════════════════════════
+   TSDPL DASHBOARD – EMBEDDED STYLESHEET
+   ══════════════════════════════════════════════════════ */
+
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── CSS Variables ── */
+:root {
+  --bg:       #060d1a;
+  --panel:    #0a1628;
+  --panel2:   #0f1e35;
+  --border:   #1a2d4a;
+  --text:     #e0eeff;
+  --muted:    #5a7898;
+  --accent:   #00c8ff;
+  --accent2:  #ff6b2b;
+  --accent3:  #00e5a0;
+  --accent4:  #ffd94a;
+  --danger:   #ff3b5c;
+  --font-head: 'Rajdhani', sans-serif;
+  --font-body: 'Barlow', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--panel); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── HEADER ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  height: 56px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo-icon {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--accent), var(--accent3));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-head);
+  font-size: 15px; font-weight: 700;
+  color: #000;
+  flex-shrink: 0;
+}
+.logo-text {
+  font-family: var(--font-head);
+  font-size: 16px; font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--text);
+}
+.logo-sub {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .1em;
+  margin-top: 1px;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.header-stat-val {
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 600;
+}
+.header-stat-lbl {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .1em;
+}
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,229,160,.1);
+  border: 1px solid rgba(0,229,160,.3);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-family: var(--font-head);
+  font-size: 11px;
+  color: var(--accent3);
+  letter-spacing: .1em;
+}
+.live-dot {
+  width: 6px; height: 6px;
+  background: var(--accent3);
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .5; transform: scale(1.3); }
+}
+
+/* ── NAV ── */
+.nav {
+  display: flex;
+  align-items: center;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  gap: 2px;
+  position: sticky;
+  top: 56px;
+  z-index: 99;
+  overflow-x: auto;
+}
+.tab {
+  padding: 12px 18px;
+  font-family: var(--font-head);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color .2s, border-color .2s;
+  user-select: none;
+}
+.tab:hover  { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── FILTERS ── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+}
+.filter-group { display: flex; flex-direction: column; gap: 4px; }
+.filter-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .1em;
+}
+select, input[type="text"] {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  outline: none;
+  min-width: 140px;
+  transition: border-color .2s;
+}
+select:focus, input[type="text"]:focus { border-color: var(--accent); }
+option { background: var(--panel); }
+.filter-btn {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  font-family: var(--font-head);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  padding: 7px 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity .2s;
+}
+.filter-btn:hover { opacity: .85; }
+.filter-btn.reset {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.filter-btn.reset:hover { border-color: var(--accent2); color: var(--accent2); }
+
+/* ── MAIN / PAGES ── */
+.main { padding: 16px 20px 40px; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── CARDS ── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.card-title {
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  color: var(--muted);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.badge {
+  background: rgba(0,200,255,.1);
+  border: 1px solid rgba(0,200,255,.25);
+  color: var(--accent);
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: .08em;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+/* ── GRIDS ── */
+.section-grid { display: grid; gap: 16px; }
+.g2  { grid-template-columns: repeat(2,1fr); }
+.g3  { grid-template-columns: repeat(3,1fr); }
+.g12 { grid-template-columns: 2fr 1fr; }
+
+/* ── KPI ROW ── */
+.kpi-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--kpi-color, var(--accent));
+  border-radius: 6px;
+  padding: 12px 16px;
+  min-width: 160px;
+  flex: 1;
+}
+.kpi.hero { min-width: 200px; }
+.kpi-val {
+  font-family: var(--font-head);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--kpi-color, var(--accent));
+  line-height: 1;
+}
+.kpi-lbl {
+  font-family: var(--font-head);
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+.kpi-sub {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+
+/* ── CHARTS ── */
+.chart-wrap         { position: relative; height: 220px; }
+.chart-wrap.short   { height: 160px; }
+.chart-wrap.tall    { height: 280px; }
+.pareto-wrap        { position: relative; height: 260px; }
+.line-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ltbtn {
+  background: transparent;
+  border: 1px solid;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  cursor: pointer;
+  opacity: .45;
+  transition: opacity .2s;
+}
+.ltbtn.on { opacity: 1; }
+
+/* ── AVAILABILITY MINI ── */
+.avail-grid {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 8px 0;
+}
+.avail-item { text-align: center; }
+.avail-circle {
+  width: 90px; height: 90px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 auto 6px;
+}
+.avail-lbl {
+  font-family: var(--font-head);
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+
+/* ── TABLES ── */
+.tbl-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+th {
+  font-family: var(--font-head);
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(26,45,74,.5);
+  color: var(--text);
+}
+tr:hover td { background: rgba(0,200,255,.03); }
+
+/* ── PILLS ── */
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+.pill-a { background: rgba(0,200,255,.15); color: var(--accent); }
+
+/* ── Delay category filter chips ── */
+.delay-cat-chip {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: .06em;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+  --chip-color: var(--accent2);
+}
+.delay-cat-chip:hover {
+  border-color: var(--chip-color);
+  color: var(--chip-color);
+  background: color-mix(in srgb, var(--chip-color) 10%, transparent);
+}
+.delay-cat-chip.chip-active {
+  border-color: var(--chip-color);
+  color: var(--chip-color);
+  background: color-mix(in srgb, var(--chip-color) 15%, transparent);
+  font-weight: 700;
+}
+.pill-b { background: rgba(255,107,43,.15); color: var(--accent2); }
+.pill-c { background: rgba(255,217,74,.15); color: var(--accent4); }
+
+/* ── MTBF / PRED CARDS ── */
+.mtbf-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.pred-card { display: flex; flex-direction: column; gap: 8px; }
+.pred-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+}
+.pred-machine { font-family: var(--font-head); font-size: 14px; margin-bottom: 4px; }
+.pred-val { font-family: var(--font-head); font-size: 18px; font-weight: 700; }
+.pred-conf { text-align: right; font-size: 11px; color: var(--muted); }
+.risk-high { border-color: rgba(255,59,92,.4)  !important; }
+.risk-med  { border-color: rgba(255,217,74,.4) !important; }
+.risk-low  { border-color: rgba(0,229,160,.4)  !important; }
+
+/* ── PIVOT TABLE ── */
+.pivot-table { overflow-x: auto; }
+
+/* ── NEW UPLOAD CHANNEL CARDS ── */
+.upload-channel-new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 20px 22px;
+  cursor: pointer;
+  transition: border-color .2s, background .2s, transform .15s;
+  overflow: hidden;
+  text-align: center;
+  user-select: none;
+}
+.upload-channel-new:hover {
+  border-color: rgba(0,200,255,.45);
+  background: rgba(0,200,255,.04);
+  transform: translateY(-2px);
+}
+.upload-channel-new.drag-over {
+  border-color: var(--accent3) !important;
+  background: rgba(0,229,160,.08) !important;
+  transform: scale(1.02);
+}
+.upload-channel-new.loaded { border-color: rgba(0,229,160,.5); }
+.ucn-accent-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 12px 12px 0 0;
+}
+.ucn-icon { font-size: 28px; margin-bottom: 10px; margin-top: 4px; }
+.ucn-machine {
+  font-family: var(--font-head);
+  font-size: 20px;
+  letter-spacing: .08em;
+  margin-bottom: 12px;
+}
+.ucn-idle-text { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.ucn-formats { font-family: var(--font-mono); font-size: 10px; color: var(--border); letter-spacing: .1em; }
+.ucn-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,229,160,.12);
+  border: 1px solid rgba(0,229,160,.3);
+  border-radius: 20px;
+  padding: 5px 14px;
+  margin-top: 4px;
+  font-size: 18px;
+  color: var(--accent3);
+}
+.ucn-checkmark { color: var(--accent3); font-size: 14px; }
+.ucn-reload-hint { font-size: 10px; color: var(--muted); margin-top: 8px; letter-spacing: .06em; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .g2, .g3, .g12 { grid-template-columns: 1fr; }
+  .filters { gap: 8px; }
+  select, input[type="text"] { min-width: 120px; }
+}
+</style>
 </head>
 <body>
 
@@ -22,12 +494,11 @@
     </div>
   </div>
   <div class="header-right">
-    <div class="header-stat" style="margin-right: 12px; border-right: 1px solid var(--border); padding-right: 16px;">
-      <div class="header-stat-val" style="color: var(--text);" id="hdr-datetime">19.05.2026 / SHIFT A</div>
+    <div class="header-stat" style="margin-right:12px;border-right:1px solid var(--border);padding-right:16px;">
+      <div class="header-stat-val" style="color:var(--text);" id="hdr-datetime">-- / SHIFT -</div>
       <div class="header-stat-lbl">CURRENT SYSTEM TIME</div>
     </div>
     <div class="live-badge"><div class="live-dot"></div>LIVE DATA</div>
-    <!-- Header KPIs removed per user request -->
   </div>
 </div>
 
@@ -119,6 +590,18 @@
       <div class="avail-grid" id="avail-mini"></div>
     </div>
   </div>
+  <!-- TOTAL PRODUCTION BY SHIFT INCHARGE -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">
+      TOTAL PRODUCTION BY SHIFT INCHARGE
+      <span class="badge">LINE-WISE SUM</span>
+    </div>
+    <div id="incharge-tonnage-section" style="padding:4px 0;">
+      <div style="color:var(--muted);font-size:13px;padding:20px;text-align:center;">
+        No data uploaded. Upload an Excel file to see incharge tonnage.
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════ PRODUCTION PAGE ═══════════════ -->
@@ -144,14 +627,80 @@
       <div class="chart-wrap"><canvas id="chart-team-tonnage"></canvas></div>
     </div>
   </div>
+  <div style="margin-top:24px;padding:2px 0 10px;border-top:1px solid var(--border);">
+    <div style="font-family:var(--font-head);font-size:11px;letter-spacing:.12em;color:var(--accent);margin-bottom:14px;">
+      ◈ TEAM &amp; INCHARGE ANALYSIS
+    </div>
+    <div class="kpi-row" id="kpi-team-anchage"></div>
+  </div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">TEAM-WISE TONNAGE – CUMULATIVE &amp; PER-SHIFT AVG <span class="badge">TEAM</span></div>
+      <div class="chart-wrap tall"><canvas id="chart-team-tonnage-detail"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">INCHARGE-WISE TOTAL TONNAGE <span class="badge">ANCHAGE</span></div>
+      <div class="chart-wrap tall"><canvas id="chart-anchage-total"></canvas></div>
+    </div>
+  </div>
+  <div class="section-grid g2" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-title">TEAM-WISE TONNAGE BY MACHINE LINE <span class="badge">STACKED</span></div>
+      <div class="chart-wrap"><canvas id="chart-team-by-machine"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">INCHARGE-WISE AVG TONNAGE PER SHIFT <span class="badge">ANCHAGE</span></div>
+      <div class="chart-wrap"><canvas id="chart-anchage-avg"></canvas></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">TEAM vs INCHARGE PERFORMANCE TABLE <span class="badge">ANCHAGE ANALYSIS</span></div>
+    <div class="tbl-wrap">
+      <table id="team-anchage-table">
+        <thead><tr>
+          <th>INCHARGE</th><th>TEAM</th><th>SHIFTS</th>
+          <th>TOTAL TONNAGE (MT)</th><th>AVG/SHIFT (MT)</th>
+          <th>BEST SHIFT (MT)</th><th>TOTAL DELAY (min)</th><th>AVG AVAIL %</th>
+        </tr></thead>
+        <tbody id="team-anchage-tbody"></tbody>
+      </table>
+    </div>
+  </div>
   <div class="card" style="margin-top:16px;">
     <div class="card-title">PRODUCTION LOG – SHIFT ENTRIES</div>
-    <div style="display:flex;gap:10px;margin-bottom:8px;">
-      <input type="text" id="prod-search" placeholder="🔍 Search by incharge, team, date..."/>
-      <select id="prod-filter-role">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;">
+      <input type="text" id="prod-search" placeholder="🔍 Search incharge, team, date…" style="flex:1;min-width:200px;"/>
+      <select id="prod-filter-role" style="min-width:160px;">
         <option value="ALL">All Users</option>
         <option value="SUPERVISOR">Shift Supervisor Only</option>
       </select>
+      <select id="prod-filter-shift" style="min-width:110px;">
+        <option value="ALL">All Shifts</option>
+        <option value="A">Shift A</option>
+        <option value="B">Shift B</option>
+        <option value="C">Shift C</option>
+      </select>
+      <select id="prod-filter-machine" style="min-width:120px;">
+        <option value="ALL">All Machines</option>
+        <option value="WCTL-1">WCTL-1</option>
+        <option value="WCTL-2">WCTL-2</option>
+        <option value="SLITTER">SLITTER</option>
+      </select>
+      <select id="prod-filter-avail" style="min-width:150px;">
+        <option value="ALL">All Availability</option>
+        <option value="HIGH">High (&gt; 85%)</option>
+        <option value="MED">Medium (70–85%)</option>
+        <option value="LOW">Low (&lt; 70%)</option>
+      </select>
+      <select id="prod-filter-sort" style="min-width:150px;">
+        <option value="DATE">Sort: Date</option>
+        <option value="TONNAGE_DESC">Sort: Tonnage ↓</option>
+        <option value="TONNAGE_ASC">Sort: Tonnage ↑</option>
+        <option value="DELAY_DESC">Sort: Delay ↓</option>
+        <option value="AVAIL_ASC">Sort: Avail ↑</option>
+      </select>
+      <button id="prod-filter-reset" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-family:var(--font-mono);font-size:10px;padding:6px 12px;border-radius:4px;cursor:pointer;white-space:nowrap;" onmouseover="this.style.borderColor='var(--accent2)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">↺ RESET</button>
+      <span id="prod-filter-count" style="font-family:var(--font-mono);font-size:10px;color:var(--muted);white-space:nowrap;"></span>
     </div>
     <div class="tbl-wrap">
       <table id="prod-table">
@@ -178,23 +727,61 @@
       <div class="chart-wrap"><canvas id="chart-delay-pie"></canvas></div>
     </div>
   </div>
-  <div class="section-grid g2" style="margin-top:16px;">
-    <div class="card">
-      <div class="card-title">HEATMAP – DELAY TIME BY INCHARGE × DELAY TYPE</div>
-      <div id="heatmap-delay" style="overflow-x:auto;"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">DELAY TREND OVER TIME – TOP 5 TYPES</div>
-      <div class="chart-wrap tall"><canvas id="chart-delay-trend"></canvas></div>
-    </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">HEATMAP – DELAY TIME BY INCHARGE × DELAY TYPE</div>
+    <div id="heatmap-delay" style="overflow-x:auto;padding:4px 0;"></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">DELAY TREND OVER TIME – TOP 5 TYPES</div>
+    <div style="position:relative;height:320px;"><canvas id="chart-delay-trend"></canvas></div>
   </div>
   <div class="card" style="margin-top:16px;">
     <div class="card-title">DELAY LOG – DETAILED BREAKDOWN</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;">
+      <input type="text" id="delay-search" placeholder="🔍 Search incharge, reason for delay…" style="flex:1;min-width:200px;"/>
+      <select id="delay-filter-machine" style="min-width:120px;">
+        <option value="ALL">All Machines</option>
+        <option value="WCTL-1">WCTL-1</option>
+        <option value="WCTL-2">WCTL-2</option>
+        <option value="SLITTER">SLITTER</option>
+      </select>
+      <select id="delay-filter-shift" style="min-width:110px;">
+        <option value="ALL">All Shifts</option>
+        <option value="A">Shift A</option>
+        <option value="B">Shift B</option>
+        <option value="C">Shift C</option>
+      </select>
+      <select id="delay-filter-sort" style="min-width:140px;">
+        <option value="DATE">Sort: Date</option>
+        <option value="TIME_DESC">Sort: Time ↓</option>
+        <option value="TIME_ASC">Sort: Time ↑</option>
+        <option value="TYPE">Sort: Type A–Z</option>
+      </select>
+      <button id="delay-filter-reset" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-family:var(--font-mono);font-size:10px;padding:6px 12px;border-radius:4px;cursor:pointer;white-space:nowrap;" onmouseover="this.style.borderColor='var(--accent2)';this.style.color='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'" onclick="document.getElementById('delay-search').value='';document.getElementById('delay-filter-machine').value='ALL';document.getElementById('delay-filter-shift').value='ALL';document.getElementById('delay-filter-sort').value='DATE';resetDelayCatChips();renderDelayTable();">↺ RESET</button>
+      <span id="delay-filter-count" style="font-family:var(--font-mono);font-size:10px;color:var(--muted);white-space:nowrap;"></span>
+    </div>
+    <!-- ── Category chip filter row ── -->
+    <div id="delay-cat-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;">
+      <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:.08em;margin-right:2px;">CATEGORY:</span>
+      <button class="delay-cat-chip chip-active" data-cat="ALL"          onclick="delayCatChip(this)">ALL</button>
+      <button class="delay-cat-chip" data-cat="MAINTENANCE"   onclick="delayCatChip(this)" style="--chip-color:#ff3b5c">⚙ MAINTENANCE</button>
+      <button class="delay-cat-chip" data-cat="COIL FEEDING"  onclick="delayCatChip(this)" style="--chip-color:var(--accent)">🔩 COIL FEEDING</button>
+      <button class="delay-cat-chip" data-cat="PACKAGING"     onclick="delayCatChip(this)" style="--chip-color:var(--accent4)">📦 PACKAGING</button>
+      <button class="delay-cat-chip" data-cat="QUALITY"       onclick="delayCatChip(this)" style="--chip-color:#a78bfa">🔍 QUALITY</button>
+      <button class="delay-cat-chip" data-cat="OPERATION"     onclick="delayCatChip(this)" style="--chip-color:var(--accent3)">🔧 OPERATION</button>
+      <button class="delay-cat-chip" data-cat="CRANE"         onclick="delayCatChip(this)" style="--chip-color:#f97316">🏗 CRANE</button>
+      <button class="delay-cat-chip" data-cat="SCRAP"         onclick="delayCatChip(this)" style="--chip-color:#84cc16">♻ SCRAP</button>
+      <button class="delay-cat-chip" data-cat="HANDOVER"      onclick="delayCatChip(this)" style="--chip-color:#6b7280">🔄 HANDOVER / TBT</button>
+      <button class="delay-cat-chip" data-cat="COMMUNICATION" onclick="delayCatChip(this)" style="--chip-color:#8b5cf6">💬 COMM</button>
+      <button class="delay-cat-chip" data-cat="HR"            onclick="delayCatChip(this)" style="--chip-color:#ec4899">👤 HR</button>
+      <button class="delay-cat-chip" data-cat="SCHEDULE"      onclick="delayCatChip(this)" style="--chip-color:#60a5fa">📅 SCHEDULE</button>
+      <button class="delay-cat-chip" data-cat="OTHER"         onclick="delayCatChip(this)" style="--chip-color:var(--muted)">OTHER</button>
+    </div>
     <div class="tbl-wrap">
       <table id="delay-table">
         <thead><tr>
           <th>DATE</th><th>MACHINE</th><th>SHIFT</th><th>INCHARGE</th>
-          <th>DELAY TYPE</th><th>TIME (min)</th><th>DESCRIPTION</th><th>CATEGORY</th>
+          <th>DELAY TYPE</th><th>TIME (min)</th><th>REASON FOR DELAY</th><th>CATEGORY</th>
         </tr></thead>
         <tbody id="delay-tbody"></tbody>
       </table>
@@ -222,7 +809,7 @@
       <table id="maint-table">
         <thead><tr>
           <th>DATE</th><th>MACHINE</th><th>SHIFT</th><th>INCHARGE</th>
-          <th>BREAKDOWN TYPE</th><th>DURATION (min)</th><th>DESCRIPTION</th>
+          <th>BREAKDOWN TYPE</th><th>DURATION (min)</th><th>REASON FOR DELAY</th>
         </tr></thead>
         <tbody id="maint-tbody"></tbody>
       </table>
@@ -258,7 +845,7 @@
     </div>
     <div class="card">
       <div class="card-title">API PREDICTED REMAINING USEFUL LIFE (RUL) <span class="badge">REGRESSION</span></div>
-      <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display:flex;flex-direction:column;gap:8px;">
         <div id="rul-card-wctl1"></div>
         <div id="rul-card-wctl2"></div>
         <div id="rul-card-slitter"></div>
@@ -275,48 +862,156 @@
       <div class="chart-wrap"><canvas id="chart-ml-rolling"></canvas></div>
     </div>
     <div class="card">
-      <div class="chart-title">RISK SCORE TREND BY MACHINE</div>
+      <div class="card-title">RISK SCORE TREND BY MACHINE</div>
       <div class="chart-wrap"><canvas id="chart-ml-risk"></canvas></div>
     </div>
   </div>
   <div class="card" style="margin-top:16px;">
-    <div class="card-title">ML INSIGHTS & RECOMMENDATIONS <span class="badge">AI</span></div>
+    <div class="card-title">ML INSIGHTS &amp; RECOMMENDATIONS <span class="badge">AI</span></div>
     <div id="ml-insights" style="padding:8px 0;"></div>
   </div>
 </div>
 
 <!-- ═══════════════ UPLOAD PAGE ═══════════════ -->
 <div class="page active" id="page-upload">
-  <div class="upload-channels" id="upload-channels">
-    <div class="upload-channel" id="ch-slitter" onclick="document.getElementById('inp-slitter').click()">
-      <div class="channel-name" style="color:var(--accent)">SLITTER</div>
-      <div class="channel-status">Click to upload delay report</div>
-      <div class="channel-count" id="cnt-slitter">—</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Accepts .xlsx / .csv</div>
-      <input type="file" id="inp-slitter" accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'SLITTER')"/>
+  <input type="file" id="inp-slitter" accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'SLITTER')"/>
+  <input type="file" id="inp-wctl1"   accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'WCTL-1')"/>
+  <input type="file" id="inp-wctl2"   accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'WCTL-2')"/>
+
+  <div style="background:linear-gradient(135deg,rgba(0,200,255,.06),rgba(0,229,160,.04));border:1px solid rgba(0,200,255,.15);border-radius:10px;padding:20px 28px;margin-bottom:20px;display:flex;align-items:center;gap:20px;">
+    <div style="font-size:32px;line-height:1;">📂</div>
+    <div>
+      <div style="font-family:var(--font-head);font-size:15px;color:var(--text);letter-spacing:.05em;margin-bottom:4px;">UPLOAD DELAY REPORTS</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6;">Upload one or more machine delay reports (.xlsx / .csv). Each upload replaces only that machine's data — other machines are unaffected.</div>
     </div>
-    <div class="upload-channel" id="ch-wctl1" onclick="document.getElementById('inp-wctl1').click()">
-      <div class="channel-name" style="color:var(--accent2)">WCTL-1</div>
-      <div class="channel-status">Click to upload delay report</div>
-      <div class="channel-count" id="cnt-wctl1">—</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Accepts .xlsx / .csv</div>
-      <input type="file" id="inp-wctl1" accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'WCTL-1')"/>
-    </div>
-    <div class="upload-channel" id="ch-wctl2" onclick="document.getElementById('inp-wctl2').click()">
-      <div class="channel-name" style="color:var(--accent3)">WCTL-2</div>
-      <div class="channel-status">Click to upload delay report</div>
-      <div class="channel-count" id="cnt-wctl2">—</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:4px;">Accepts .xlsx / .csv</div>
-      <input type="file" id="inp-wctl2" accept=".xlsx,.csv" style="display:none" onchange="handleUpload(event,'WCTL-2')"/>
+    <div style="margin-left:auto;text-align:right;flex-shrink:0;">
+      <div id="upload-global-count" style="font-family:var(--font-head);font-size:24px;color:var(--accent3)">0</div>
+      <div style="font-size:10px;color:var(--muted);letter-spacing:.08em;">TOTAL SHIFTS</div>
     </div>
   </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+    <label for="inp-slitter" id="ch-slitter" class="upload-channel-new" data-machine="SLITTER"
+      ondragover="uploadDragOver(event,this)" ondragleave="uploadDragLeave(this)" ondrop="uploadDrop(event,'SLITTER',this)">
+      <div class="ucn-accent-bar" style="background:var(--accent);"></div>
+      <div class="ucn-icon">⚙</div>
+      <div class="ucn-machine" style="color:var(--accent)">SLITTER</div>
+      <div class="ucn-state" id="ucn-state-slitter">
+        <div class="ucn-idle-text">Drop file here or click to browse</div>
+        <div class="ucn-formats">.xlsx &nbsp;/&nbsp; .csv</div>
+      </div>
+      <div class="ucn-pill" id="cnt-slitter-wrap" style="display:none">
+        <span class="ucn-checkmark">✓</span>
+        <span id="cnt-slitter" style="font-family:var(--font-head)">0</span>
+        <span style="font-size:10px;color:var(--muted)">shifts</span>
+      </div>
+      <div class="ucn-reload-hint" id="hint-slitter" style="display:none">Click to re-upload</div>
+    </label>
+    <label for="inp-wctl1" id="ch-wctl1" class="upload-channel-new" data-machine="WCTL-1"
+      ondragover="uploadDragOver(event,this)" ondragleave="uploadDragLeave(this)" ondrop="uploadDrop(event,'WCTL-1',this)">
+      <div class="ucn-accent-bar" style="background:var(--accent2);"></div>
+      <div class="ucn-icon">🏭</div>
+      <div class="ucn-machine" style="color:var(--accent2)">WCTL-1</div>
+      <div class="ucn-state" id="ucn-state-wctl1">
+        <div class="ucn-idle-text">Drop file here or click to browse</div>
+        <div class="ucn-formats">.xlsx &nbsp;/&nbsp; .csv</div>
+      </div>
+      <div class="ucn-pill" id="cnt-wctl1-wrap" style="display:none">
+        <span class="ucn-checkmark">✓</span>
+        <span id="cnt-wctl1" style="font-family:var(--font-head)">0</span>
+        <span style="font-size:10px;color:var(--muted)">shifts</span>
+      </div>
+      <div class="ucn-reload-hint" id="hint-wctl1" style="display:none">Click to re-upload</div>
+    </label>
+    <label for="inp-wctl2" id="ch-wctl2" class="upload-channel-new" data-machine="WCTL-2"
+      ondragover="uploadDragOver(event,this)" ondragleave="uploadDragLeave(this)" ondrop="uploadDrop(event,'WCTL-2',this)">
+      <div class="ucn-accent-bar" style="background:var(--accent3);"></div>
+      <div class="ucn-icon">🔧</div>
+      <div class="ucn-machine" style="color:var(--accent3)">WCTL-2</div>
+      <div class="ucn-state" id="ucn-state-wctl2">
+        <div class="ucn-idle-text">Drop file here or click to browse</div>
+        <div class="ucn-formats">.xlsx &nbsp;/&nbsp; .csv</div>
+      </div>
+      <div class="ucn-pill" id="cnt-wctl2-wrap" style="display:none">
+        <span class="ucn-checkmark">✓</span>
+        <span id="cnt-wctl2" style="font-family:var(--font-head)">0</span>
+        <span style="font-size:10px;color:var(--muted)">shifts</span>
+      </div>
+      <div class="ucn-reload-hint" id="hint-wctl2" style="display:none">Click to re-upload</div>
+    </label>
+  </div>
+
   <div class="card" style="margin-top:20px;">
-    <div class="card-title">UPLOAD STATUS</div>
-    <div id="upload-status" style="font-family:var(--font-mono);font-size:12px;color:var(--muted);min-height:60px;"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div class="card-title" style="margin:0;">UPLOAD STATUS LOG</div>
+      <button onclick="document.getElementById('upload-status').innerHTML=''" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-family:var(--font-mono);font-size:10px;padding:4px 10px;border-radius:4px;cursor:pointer;">CLEAR</button>
+    </div>
+    <div id="upload-status" style="font-family:var(--font-mono);font-size:12px;color:var(--muted);min-height:70px;line-height:2;">Ready. Upload a delay report above to begin.</div>
+  </div>
+  <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--muted);letter-spacing:.06em;">
+    After uploading, switch to <strong style="color:var(--text)">OVERVIEW</strong> or any other tab to see analytics.
   </div>
 </div>
 
 </div><!-- /main -->
+
+<script>
+function uploadDragOver(e,el){e.preventDefault();el.classList.add('drag-over');}
+function uploadDragLeave(el){el.classList.remove('drag-over');}
+function uploadDrop(e,machine,el){
+  e.preventDefault();el.classList.remove('drag-over');
+  const file=e.dataTransfer.files[0];
+  if(!file)return;
+  handleUpload({target:{files:[file],value:''}},machine);
+}
+
+// ── Category chip multi-select logic ──────────────────────────
+function delayCatChip(el){
+  const cat = el.dataset.cat;
+  if(cat === 'ALL'){
+    // Activate ALL, deactivate everything else
+    document.querySelectorAll('.delay-cat-chip').forEach(c=>{
+      c.classList.toggle('chip-active', c.dataset.cat === 'ALL');
+    });
+  } else {
+    // Toggle this chip; if ALL was active, deactivate it
+    el.classList.toggle('chip-active');
+    const allChip = document.querySelector('.delay-cat-chip[data-cat="ALL"]');
+    if(allChip) allChip.classList.remove('chip-active');
+    // If nothing active, re-activate ALL
+    const anyActive = [...document.querySelectorAll('.delay-cat-chip')].some(c=>c.classList.contains('chip-active'));
+    if(!anyActive && allChip) allChip.classList.add('chip-active');
+  }
+  if(typeof renderDelayTable === 'function') renderDelayTable();
+}
+
+function resetDelayCatChips(){
+  document.querySelectorAll('.delay-cat-chip').forEach(c=>{
+    c.classList.toggle('chip-active', c.dataset.cat === 'ALL');
+  });
+}
+const _uploadObserver=new MutationObserver(()=>{
+  ['slitter','wctl1','wctl2'].forEach(id=>{
+    const cnt=document.getElementById('cnt-'+id);
+    if(!cnt)return;
+    const pill=document.getElementById('cnt-'+id+'-wrap');
+    const hint=document.getElementById('hint-'+id);
+    if(cnt.textContent&&cnt.textContent!=='—'&&cnt.textContent!=='0'&&pill){
+      pill.style.display='flex';
+      if(hint)hint.style.display='block';
+      const total=window.RAW_DATA?window.RAW_DATA.length:0;
+      const gc=document.getElementById('upload-global-count');
+      if(gc)gc.textContent=total.toLocaleString();
+    }
+  });
+});
+document.addEventListener('DOMContentLoaded',()=>{
+  ['slitter','wctl1','wctl2'].forEach(id=>{
+    const el=document.getElementById('cnt-'+id);
+    if(el)_uploadObserver.observe(el,{childList:true,characterData:true,subtree:true});
+  });
+});
+</script>
 
 <!-- Modular JS files loaded in dependency order -->
 <script src="js/data.js"></script>

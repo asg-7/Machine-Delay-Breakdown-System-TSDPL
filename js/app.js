@@ -58,10 +58,39 @@ function setupFilterEvents(){
     };
   };
 
+  // Production table filters
   const searchInput = document.getElementById('prod-search');
   if (searchInput) searchInput.addEventListener('input', debounce(renderProdTable, 250));
-  const filterRole = document.getElementById('prod-filter-role');
-  if (filterRole) filterRole.addEventListener('change', renderProdTable);
+  ['prod-filter-role','prod-filter-shift','prod-filter-machine','prod-filter-avail','prod-filter-sort'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('change', renderProdTable);
+  });
+  const prodReset = document.getElementById('prod-filter-reset');
+  if(prodReset) prodReset.addEventListener('click', ()=>{
+    ['prod-filter-role','prod-filter-shift','prod-filter-machine','prod-filter-avail'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.value='ALL';
+    });
+    const ps=document.getElementById('prod-filter-sort'); if(ps) ps.value='DATE';
+    const si=document.getElementById('prod-search'); if(si) si.value='';
+    renderProdTable();
+  });
+
+  // Delay table filters
+  const delaySearch = document.getElementById('delay-search');
+  if(delaySearch) delaySearch.addEventListener('input', debounce(renderDelayTable, 250));
+  ['delay-filter-machine','delay-filter-shift','delay-filter-category','delay-filter-sort'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('change', renderDelayTable);
+  });
+  const delayReset = document.getElementById('delay-filter-reset');
+  if(delayReset) delayReset.addEventListener('click', ()=>{
+    ['delay-filter-machine','delay-filter-shift','delay-filter-category'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.value='ALL';
+    });
+    const ds_sort=document.getElementById('delay-filter-sort'); if(ds_sort) ds_sort.value='DATE';
+    const ds=document.getElementById('delay-search'); if(ds) ds.value='';
+    renderDelayTable();
+  });
 }
 
 function updateHeader(){
@@ -72,11 +101,71 @@ function updateHeader(){
 
 async function runAnomalyDetection(shiftRecords) {
   try {
-    const res = await fetch('http://localhost:8000/api/anomaly/detect', {
+    const mappedRecords = shiftRecords.map(r => {
+      // Format date from DD.MM.YYYY to YYYY-MM-DD
+      let yyyymmdd = '';
+      if (r.date) {
+        const parts = r.date.split('.');
+        if (parts.length === 3) {
+          yyyymmdd = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+      }
+      if (!yyyymmdd) {
+        yyyymmdd = new Date().toISOString().split('T')[0];
+      }
+
+      // Calculate delay durations by category
+      let delayBreakdown = 0;
+      let delayPlanned = 0;
+      let delayOther = 0;
+      let breakdownCount = 0;
+
+      if (r.delays && Array.isArray(r.delays)) {
+        r.delays.forEach(d => {
+          const type = d._normType || (typeof normDelay === 'function' ? normDelay(d.type) : 'OTHER');
+          if (type === 'MAINTENANCE BREAKDOWN') {
+            delayBreakdown += d.time;
+            breakdownCount += 1;
+          } else if (type === 'PLANNED MAINTENANCE') {
+            delayPlanned += d.time;
+          } else {
+            delayOther += d.time;
+          }
+        });
+      }
+
+      // Default target tonnage by machine type
+      let targetTonnes = 450.0;
+      if (r.machine === 'SLITTER') {
+        targetTonnes = 300.0;
+      }
+
+      return {
+        shift_date:         yyyymmdd,
+        shift:              r.shift || 'A',
+        line:               r.machine || 'UNKNOWN',
+        incharge:           r._normIncharge || r.incharge || 'UNKNOWN',
+        production_tonnes:  parseFloat(r.tonnage) || 0.0,
+        available_hours:    8.0,
+        delay_minutes:      parseFloat(r.totalDelayMin) || 0.0,
+        breakdown_count:    breakdownCount,
+        delay_breakdown:    delayBreakdown,
+        delay_planned:      delayPlanned,
+        delay_other:        delayOther,
+        target_tonnes:      targetTonnes
+      };
+    });
+
+    const res = await fetch('http://127.0.0.1:8000/api/anomaly/detect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(shiftRecords)
+      body: JSON.stringify(mappedRecords)
     });
+
+    if (!res.ok) {
+      throw new Error(`API returned status ${res.status}`);
+    }
+
     const { results, anomaly_count } = await res.json();
     // Store on window for analytics.js to consume
     window.ANOMALY_RESULTS = results;

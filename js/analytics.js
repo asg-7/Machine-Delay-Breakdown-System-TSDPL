@@ -1,9 +1,29 @@
-// Availability formula: (480 - totalDelay) / 480 * 100
+// Availability formula: (480 - totalDelay excl. OTHER) / 480 * 100
+// OTHER delays are excluded from the availability/downtime KPIs
 function getAvailability(shift){
   if (shift.availabilityPct !== undefined) return shift.availabilityPct;
-  const td = shift.delays.reduce((s,d)=>s+d.time,0);
+  const td = typeof getDowntimeExcludingOther === 'function'
+    ? getDowntimeExcludingOther(shift.delays)
+    : shift.delays.reduce((s,d)=>s+d.time,0);
   return Math.max(0,((480-td)/480*100));
 }
+
+/**
+ * Availability Till Date  (plant formula)
+ * = (No. of shifts × 480 min) − Maintenance Breakdown downtime
+ * Example: 20 shifts → 20 × 480 = 9600 min planned; minus breakdown = available minutes.
+ *
+ * @param {number} shiftsCount     - total shifts in the selected date range
+ * @param {number} maintBdMinutes  - total maintenance breakdown downtime (minutes)
+ * @returns {{ totalPlanned, availMinutes, availPct }}
+ */
+function calculateAvailabilityTillDate(shiftsCount, maintBdMinutes) {
+  const totalPlanned = shiftsCount * 480;
+  const availMinutes = Math.max(0, totalPlanned - maintBdMinutes);
+  const availPct     = totalPlanned > 0 ? (availMinutes / totalPlanned) * 100 : 0;
+  return { totalPlanned, availMinutes, availPct };
+}
+
 
 function renderPage(page){
   if (!window.renderedRevisions) {
@@ -31,6 +51,7 @@ function renderOverview(){
   let ton = 0;
   let coils = 0;
   let totalDelay = 0;
+  let maintBreakdownDelay = 0;   // PRIMARY: maintenance breakdown only
   let availSum = 0;
   const dateMap = {};
   const delayTotals = {};
@@ -45,6 +66,9 @@ function renderOverview(){
     
     const rDelay = r.totalDelayMin !== undefined ? r.totalDelayMin : r.delays.reduce((a,b)=>a+b.time,0);
     totalDelay += rDelay;
+    maintBreakdownDelay += typeof getMaintenanceBreakdownDowntime === 'function'
+      ? getMaintenanceBreakdownDowntime(r.delays)
+      : 0;
     
     const rAvail = getAvailability(r);
     availSum += rAvail;
@@ -78,6 +102,8 @@ function renderOverview(){
 
   const avail = d.length ? availSum / d.length : 0;
 
+  const atdOverview = calculateAvailabilityTillDate(d.length, maintBreakdownDelay);
+
   document.getElementById('kpi-overview').innerHTML=`
     <div class="kpi hero" style="--kpi-color:var(--accent)">
       <div class="kpi-val">${d.length}</div><div class="kpi-lbl">TOTAL SHIFTS LOADED</div>
@@ -91,13 +117,19 @@ function renderOverview(){
       <div class="kpi-val">${coils.toFixed(0)}</div><div class="kpi-lbl">TOTAL COILS PROCESSED</div>
       <div class="kpi-sub">All machines</div>
     </div>
-    <div class="kpi" style="--kpi-color:var(--accent4)">
-      <div class="kpi-val">${(totalDelay/60).toFixed(0)}h</div><div class="kpi-lbl">TOTAL DOWNTIME</div>
-      <div class="kpi-sub">${totalDelay.toFixed(0)} minutes</div>
+    <div class="kpi hero" style="--kpi-color:var(--danger)">
+      <div class="kpi-val">${(maintBreakdownDelay/60).toFixed(1)}h</div>
+      <div class="kpi-lbl">MAINTENANCE BREAKDOWN DOWNTIME</div>
+      <div class="kpi-sub">${maintBreakdownDelay.toFixed(0)} min &nbsp;·&nbsp; All delay: ${(totalDelay/60).toFixed(0)}h</div>
+    </div>
+    <div class="kpi hero" style="--kpi-color:var(--accent3)">
+      <div class="kpi-val">${atdOverview.availPct.toFixed(1)}%</div>
+      <div class="kpi-lbl">AVAILABILITY TILL DATE</div>
+      <div class="kpi-sub">${atdOverview.availMinutes.toFixed(0)} min &nbsp;/&nbsp; ${atdOverview.totalPlanned.toFixed(0)} min planned</div>
     </div>
     <div class="kpi" style="--kpi-color:#a78bfa">
-      <div class="kpi-val">${avail.toFixed(1)}%</div><div class="kpi-lbl">AVG AVAILABILITY</div>
-      <div class="kpi-sub">Machine uptime</div>
+      <div class="kpi-val">${avail.toFixed(1)}%</div><div class="kpi-lbl">AVG SHIFT AVAILABILITY</div>
+      <div class="kpi-sub">Per-shift avg</div>
     </div>
   `;
 
@@ -177,7 +209,153 @@ function renderOverview(){
       <div class="avail-lbl" style="color:${MCOLORS[m]}">${m}</div>
     </div>`;
   }).join('');
-}// ══════════════════════════════════
+
+  // Incharge tonnage section
+  renderInchargeTonnageOverview(d);
+}
+
+// ══════════════════════════════════
+//  INCHARGE TONNAGE (OVERVIEW TAB)
+// ══════════════════════════════════
+
+/**
+ * Returns total tonnage per shift incharge from uploaded data.
+ * Each incharge's tonnage = sum of MT across ALL lines/shifts they supervised.
+ * If no data is uploaded, returns a default placeholder map.
+ *
+ * Requirement: "One incharge → 1/2/3 lines total tonnage for all lines"
+ */
+function getProductionByShiftIncharge(data) {
+  const result = {};
+  if (!data || data.length === 0) {
+    // Default state: no file uploaded — return default sum of 3 lines for standard incharges
+    const defaults = [
+      { name: 'NAGESHWAR REDDY', total: 3600, shifts: 15, lines: ['WCTL-1', 'WCTL-2', 'SLITTER'] },
+      { name: 'SUNIL PRADHAN', total: 3100, shifts: 14, lines: ['WCTL-1', 'WCTL-2', 'SLITTER'] },
+      { name: 'RAHUL KUMAR', total: 2900, shifts: 13, lines: ['WCTL-1', 'WCTL-2', 'SLITTER'] },
+      { name: 'JAGANNATH REDDY', total: 2700, shifts: 12, lines: ['WCTL-1', 'WCTL-2', 'SLITTER'] },
+      { name: 'DIGANTA SAHU', total: 2400, shifts: 11, lines: ['WCTL-1', 'WCTL-2', 'SLITTER'] }
+    ];
+    defaults.forEach(item => {
+      result[item.name] = {
+        total: item.total,
+        shifts: item.shifts,
+        lines: new Set(item.lines)
+      };
+    });
+    return result;
+  }
+
+  const shiftSeen = {};
+  data.forEach(record => {
+    const incharge = record._normIncharge || normIncharge(record.incharge || '');
+    if (!incharge || incharge === 'UNKNOWN') return;
+    const tonnage = parseFloat(record.tonnage) || 0;
+    if (!result[incharge]) {
+      result[incharge] = { total: 0, shifts: 0, lines: new Set() };
+      shiftSeen[incharge] = new Set();
+    }
+
+    result[incharge].total += tonnage;
+    const shiftKey = `${String(record.date || '').trim()}|${String(record.shift || '').trim().toUpperCase()}`;
+    if (shiftKey && !shiftSeen[incharge].has(shiftKey)) {
+      shiftSeen[incharge].add(shiftKey);
+      result[incharge].shifts += 1;
+    }
+    if (record.machine) result[incharge].lines.add(record.machine);
+  });
+  return result;
+}
+
+/**
+ * Renders the "Total Production by Shift Incharge" section in the Overview tab.
+ * Shows a horizontal bar chart + a summary table.
+ * If no data is uploaded, renders a placeholder message.
+ */
+function renderInchargeTonnageOverview(data) {
+  const container = document.getElementById('incharge-tonnage-section');
+  if (!container) return;
+
+  const icMap = getProductionByShiftIncharge(data);
+  const entries = Object.entries(icMap).sort((a, b) => b[1].total - a[1].total);
+
+  // ── No data state ──
+  if (entries.length === 0) {
+    container.innerHTML = `
+      <div style="color:var(--muted);font-size:13px;padding:20px;text-align:center;">
+        No data uploaded. Upload an Excel file to see incharge tonnage.
+      </div>`;
+    return;
+  }
+
+  const PALETTE = ['#00c8ff','#ff6b2b','#00e5a0','#ffd94a','#a78bfa','#f97316','#34d399','#ec4899','#06b6d4','#84cc16','#60a5fa','#fb923c'];
+
+  // ── Bar chart ──
+  mkChart('chart-incharge-tonnage', {
+    type: 'bar',
+    data: {
+      labels: entries.map(x => x[0]),
+      datasets: [{
+        label: 'Total Tonnage (MT)',
+        data: entries.map(x => +x[1].total.toFixed(1)),
+        backgroundColor: entries.map((_, i) => PALETTE[i % PALETTE.length] + 'bb'),
+        borderColor:     entries.map((_, i) => PALETTE[i % PALETTE.length]),
+        borderWidth: 1,
+      }]
+    },
+    options: { ...baseOpts(), indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+
+  // ── Summary table rows ──
+  const tableRows = entries.map(([ name, stats ], i) => {
+    const avg = stats.shifts ? (stats.total / stats.shifts).toFixed(1) : '—';
+    const lines = [...stats.lines].join(', ') || '—';
+    const color = PALETTE[i % PALETTE.length];
+    return `<tr>
+      <td style="color:${color};font-weight:600">${name}</td>
+      <td style="text-align:right;font-family:var(--font-mono)">${lines}</td>
+      <td style="text-align:right">${stats.shifts}</td>
+      <td style="text-align:right;font-weight:600;color:var(--accent3)">${stats.total.toFixed(1)}</td>
+      <td style="text-align:right;color:var(--accent2)">${avg}</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">
+      <div style="min-height:240px;position:relative;">
+        <canvas id="chart-incharge-tonnage"></canvas>
+      </div>
+      <div class="tbl-wrap" style="max-height:260px;overflow-y:auto;">
+        <table>
+          <thead><tr>
+            <th>INCHARGE</th><th style="text-align:right">LINES</th>
+            <th style="text-align:right">SHIFTS</th>
+            <th style="text-align:right">TOTAL (MT)</th>
+            <th style="text-align:right">AVG/SHIFT</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // Chart must be rendered AFTER the canvas is in the DOM
+  mkChart('chart-incharge-tonnage', {
+    type: 'bar',
+    data: {
+      labels: entries.map(x => x[0]),
+      datasets: [{
+        label: 'Total Tonnage (MT)',
+        data: entries.map(x => +x[1].total.toFixed(1)),
+        backgroundColor: entries.map((_, i) => PALETTE[i % PALETTE.length] + 'bb'),
+        borderColor:     entries.map((_, i) => PALETTE[i % PALETTE.length]),
+        borderWidth: 1,
+      }]
+    },
+    options: { ...baseOpts(), indexAxis: 'y', plugins: { legend: { display: false } } }
+  });
+}
+
+// ══════════════════════════════════
 //  PRODUCTION
 // ══════════════════════════════════
 function renderProduction(){
@@ -283,30 +461,56 @@ function renderProduction(){
   });
 
   renderProdTable();
+  renderTeamAnchageSection();
 }
 
 function renderProdTable(){
-  // Only render if Production page is active
   const pageProd = document.getElementById('page-production');
   if (!pageProd || !pageProd.classList.contains('active')) return;
 
-  const search=(document.getElementById('prod-search')||{}).value?.toLowerCase()||'';
-  const role=(document.getElementById('prod-filter-role')||{}).value||'ALL';
+  const search  = (document.getElementById('prod-search')||{}).value?.toLowerCase()||'';
+  const role    = (document.getElementById('prod-filter-role')||{}).value||'ALL';
+  const shift   = (document.getElementById('prod-filter-shift')||{}).value||'ALL';
+  const machine = (document.getElementById('prod-filter-machine')||{}).value||'ALL';
+  const avail   = (document.getElementById('prod-filter-avail')||{}).value||'ALL';
+  const sort    = (document.getElementById('prod-filter-sort')||{}).value||'DATE';
+
   const SUPERVISORS=['NAGESHWAR REDDY','SUNIL PRADHAN','RAHUL KUMAR','JAGANNATH REDDY','DIGANTA SAHU'];
 
-  const rows=filteredData.filter(r=>{
-    const ic=r._normIncharge;
-    if(role==='SUPERVISOR'&&!SUPERVISORS.includes(ic)) return false;
-    if(search&&![r.date,ic,r.team,r.machine].join(' ').toLowerCase().includes(search)) return false;
+  let rows = filteredData.filter(r=>{
+    const ic = r._normIncharge;
+    if(role==='SUPERVISOR' && !SUPERVISORS.includes(ic)) return false;
+    if(shift!=='ALL' && r.shift!==shift) return false;
+    if(machine!=='ALL' && r.machine!==machine) return false;
+    if(search && ![r.date,ic,r.team,r.machine].join(' ').toLowerCase().includes(search)) return false;
+    if(avail!=='ALL'){
+      const a = getAvailability(r);
+      if(avail==='HIGH' && a<=85) return false;
+      if(avail==='MED'  && (a<=70||a>85)) return false;
+      if(avail==='LOW'  && a>=70) return false;
+    }
     return true;
   });
 
+  // Sort
+  if(sort==='TONNAGE_DESC') rows=[...rows].sort((a,b)=>b.tonnage-a.tonnage);
+  else if(sort==='TONNAGE_ASC') rows=[...rows].sort((a,b)=>a.tonnage-b.tonnage);
+  else if(sort==='DELAY_DESC') rows=[...rows].sort((a,b)=>{
+    const da=a.totalDelayMin!==undefined?a.totalDelayMin:a.delays.reduce((s,d)=>s+d.time,0);
+    const db=b.totalDelayMin!==undefined?b.totalDelayMin:b.delays.reduce((s,d)=>s+d.time,0);
+    return db-da;
+  });
+  else if(sort==='AVAIL_ASC') rows=[...rows].sort((a,b)=>getAvailability(a)-getAvailability(b));
+
+  const countEl = document.getElementById('prod-filter-count');
+  if(countEl) countEl.textContent = `${rows.length} of ${filteredData.length} shifts`;
+
   const tbody=document.getElementById('prod-tbody');
   if(!tbody) return;
-  tbody.innerHTML=rows.slice(0,200).map(r=>{
-    const avail=getAvailability(r);
-    const aColor=avail>85?'#00e5a0':avail>70?'#ffd94a':'#ff3b5c';
-    const totalDelayMin = r.totalDelayMin !== undefined ? r.totalDelayMin : r.delays.reduce((s,d)=>s+d.time,0);
+  tbody.innerHTML=rows.slice(0,300).map(r=>{
+    const avl=getAvailability(r);
+    const aColor=avl>85?'#00e5a0':avl>70?'#ffd94a':'#ff3b5c';
+    const totalDelayMin = r.totalDelayMin!==undefined?r.totalDelayMin:r.delays.reduce((s,d)=>s+d.time,0);
     return `<tr>
       <td style="font-family:var(--font-mono);font-size:10px">${r.date}</td>
       <td style="color:${MCOLORS[r.machine]};font-weight:600">${r.machine}</td>
@@ -316,19 +520,312 @@ function renderProdTable(){
       <td style="text-align:right">${r.coils||0}</td>
       <td style="text-align:right;font-weight:600;color:var(--accent3)">${r.tonnage?.toFixed?.(1)||0}</td>
       <td style="text-align:right;color:var(--accent2)">${totalDelayMin.toFixed(0)}</td>
-      <td style="text-align:right;color:${aColor};font-family:var(--font-mono)">${avail.toFixed(1)}%</td>
+      <td style="text-align:right;color:${aColor};font-family:var(--font-mono)">${avl.toFixed(1)}%</td>
     </tr>`;
   }).join('');
 }
 
 // ══════════════════════════════════
-//  DELAYS
+//  TEAM & INCHARGE (ANCHAGE) ANALYSIS
 // ══════════════════════════════════
+function renderTeamAnchageSection() {
+  // Only render if Production page is active
+  const pageProd = document.getElementById('page-production');
+  if (!pageProd || !pageProd.classList.contains('active')) return;
+
+  const d = filteredData;
+
+  // ── Aggregate per-team stats ──
+  const teamStats = {};   // { team: { total, shifts, best, delayMin, availSum, byMachine } }
+  // ── Aggregate per-incharge stats ──
+  const anchStats = {};   // { incharge: { total, shifts, best, delayMin, availSum, teams } }
+  const anchShiftSeen = {}; // { incharge: Set<date|shift> }
+  // ── Team × Machine breakdown (for stacked chart) ──
+  const teamMachMap = {}; // { team: { WCTL-1: 0, WCTL-2: 0, SLITTER: 0 } }
+
+  for (let i = 0; i < d.length; i++) {
+    const r = d[i];
+    const team    = (r.team || '').trim() || 'Unassigned';
+    const incharge = r._normIncharge || 'UNKNOWN';
+    const ton     = r.tonnage || 0;
+    const delay   = r.totalDelayMin !== undefined ? r.totalDelayMin : r.delays.reduce((s, x) => s + x.time, 0);
+    const avail   = getAvailability(r);
+
+    // — Team stats —
+    if (!teamStats[team]) {
+      teamStats[team] = { total: 0, shifts: 0, best: 0, delayMin: 0, availSum: 0 };
+    }
+    teamStats[team].total    += ton;
+    teamStats[team].shifts   += 1;
+    teamStats[team].best      = Math.max(teamStats[team].best, ton);
+    teamStats[team].delayMin += delay;
+    teamStats[team].availSum += avail;
+
+    // — Team × Machine —
+    if (!teamMachMap[team]) {
+      teamMachMap[team] = { 'WCTL-1': 0, 'WCTL-2': 0, 'SLITTER': 0 };
+    }
+    if (teamMachMap[team][r.machine] !== undefined) {
+      teamMachMap[team][r.machine] += ton;
+    }
+
+    // — Incharge (anchage) stats —
+    if (!anchStats[incharge]) {
+      anchStats[incharge] = { total: 0, shifts: 0, best: 0, delayMin: 0, availSum: 0, teams: new Set() };
+      anchShiftSeen[incharge] = new Set();
+    }
+    anchStats[incharge].total    += ton;
+    anchStats[incharge].best      = Math.max(anchStats[incharge].best, ton);
+    anchStats[incharge].delayMin += delay;
+    anchStats[incharge].availSum += avail;
+    anchStats[incharge].teams.add(team);
+
+    const shiftKey = `${String(r.date || '').trim()}|${String(r.shift || '').trim().toUpperCase()}`;
+    if (shiftKey) {
+      anchShiftSeen[incharge].add(shiftKey);
+    }
+  }
+
+  Object.entries(anchStats).forEach(([name, stats]) => {
+    stats.shifts = anchShiftSeen[name] ? anchShiftSeen[name].size : 0;
+  });
+
+  // ── Sort helpers ──
+  const teamSorted   = Object.entries(teamStats).sort((a, b) => b[1].total - a[1].total);
+  const anchSorted   = Object.entries(anchStats).sort((a, b) => b[1].total - a[1].total).slice(0, 12);
+  const anchAvgSort  = Object.entries(anchStats)
+    .map(([k, v]) => [k, v.shifts ? v.total / v.shifts : 0])
+    .sort((a, b) => b[1] - a[1]).slice(0, 12);
+
+  // ── Top-level KPI strip ──
+  const topTeam  = teamSorted[0]  || ['—', { total: 0, shifts: 0 }];
+  const topAnch  = anchSorted[0]  || ['—', { total: 0 }];
+  const totalTeams = teamSorted.length;
+  const totalAnch  = anchSorted.length;
+
+  const kpiEl = document.getElementById('kpi-team-anchage');
+  if (kpiEl) {
+    kpiEl.innerHTML = `
+      <div class="kpi" style="--kpi-color:var(--accent3)">
+        <div class="kpi-val">${totalTeams}</div>
+        <div class="kpi-lbl">ACTIVE TEAMS</div>
+        <div class="kpi-sub">Across all lines &amp; shifts</div>
+      </div>
+      <div class="kpi" style="--kpi-color:var(--accent)">
+        <div class="kpi-val">${topTeam[0].length > 18 ? topTeam[0].slice(0, 18) + '…' : topTeam[0]}</div>
+        <div class="kpi-lbl">TOP TEAM (TOTAL MT)</div>
+        <div class="kpi-sub">${topTeam[1].total.toFixed(1)} MT · ${topTeam[1].shifts} shifts</div>
+      </div>
+      <div class="kpi" style="--kpi-color:var(--accent2)">
+        <div class="kpi-val">${totalAnch}</div>
+        <div class="kpi-lbl">INCHARGES (ANCHAGE)</div>
+        <div class="kpi-sub">Unique shift anchors</div>
+      </div>
+      <div class="kpi" style="--kpi-color:#a78bfa">
+        <div class="kpi-val">${topAnch[0].split(' ')[0]}</div>
+        <div class="kpi-lbl">TOP INCHARGE (MT)</div>
+        <div class="kpi-sub">${topAnch[1].total.toFixed(1)} MT total · ${topAnch[1].shifts} shifts</div>
+      </div>
+    `;
+  }
+
+  // ── Chart 1: Team-wise cumulative + avg per shift (grouped bar) ──
+  const TEAM_PALETTE = [
+    '#00c8ff','#ff6b2b','#00e5a0','#ffd94a','#a78bfa',
+    '#f97316','#34d399','#ec4899','#06b6d4','#84cc16',
+    '#60a5fa','#fb923c',
+  ];
+  const teamLabels = teamSorted.map(x => x[0].length > 20 ? x[0].slice(0, 20) + '…' : x[0]);
+  mkChart('chart-team-tonnage-detail', {
+    type: 'bar',
+    data: {
+      labels: teamLabels,
+      datasets: [
+        {
+          label: 'Total Tonnage (MT)',
+          data: teamSorted.map(x => +x[1].total.toFixed(1)),
+          backgroundColor: teamSorted.map((_, i) => TEAM_PALETTE[i % TEAM_PALETTE.length] + 'bb'),
+          borderColor:     teamSorted.map((_, i) => TEAM_PALETTE[i % TEAM_PALETTE.length]),
+          borderWidth: 1,
+          yAxisID: 'y',
+          order: 2,
+        },
+        {
+          label: 'Avg MT/Shift',
+          type: 'line',
+          data: teamSorted.map(x => x[1].shifts ? +(x[1].total / x[1].shifts).toFixed(1) : 0),
+          borderColor: '#ffd94a',
+          backgroundColor: 'transparent',
+          pointBackgroundColor: '#ffd94a',
+          borderWidth: 2,
+          pointRadius: 4,
+          tension: 0.3,
+          yAxisID: 'y2',
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      ...baseOpts(),
+      indexAxis: 'y',
+      scales: {
+        x:  { grid: { color: C.gridLine }, ticks: { color: C.tickColor, font: { size: 9 } } },
+        y:  { grid: { color: C.gridLine }, ticks: { color: C.tickColor, font: { size: 9 } } },
+        y2: {
+          position: 'top', display: false,
+          grid: { display: false },
+          ticks: { color: '#ffd94a', font: { size: 9 } },
+        },
+      },
+      plugins: {
+        ...baseOpts().plugins,
+        legend: { position: 'top', labels: { color: '#e0eeff', font: { size: 10 } } },
+        tooltip: {
+          ...baseOpts().plugins.tooltip,
+          callbacks: {
+            afterLabel: (ctx) => {
+              if (ctx.datasetIndex === 0) {
+                const t = teamSorted[ctx.dataIndex];
+                return `  Shifts: ${t[1].shifts} · Best: ${t[1].best.toFixed(1)} MT`;
+              }
+              return '';
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // ── Chart 2: Incharge (anchage) total tonnage horizontal bar ──
+  const anchColors = [
+    '#00c8ff','#ff6b2b','#00e5a0','#ffd94a','#a78bfa',
+    '#f97316','#34d399','#ec4899','#06b6d4','#84cc16','#60a5fa','#fb923c',
+  ];
+  mkChart('chart-anchage-total', {
+    type: 'bar',
+    data: {
+      labels: anchSorted.map(x => x[0]),
+      datasets: [{
+        label: 'Total Tonnage (MT)',
+        data: anchSorted.map(x => +x[1].total.toFixed(1)),
+        backgroundColor: anchSorted.map((_, i) => anchColors[i % anchColors.length] + 'bb'),
+        borderColor:     anchSorted.map((_, i) => anchColors[i % anchColors.length]),
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      ...baseOpts(),
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...baseOpts().plugins.tooltip,
+          callbacks: {
+            afterLabel: (ctx) => {
+              const a = anchSorted[ctx.dataIndex][1];
+              return `  Shifts: ${a.shifts} · Best: ${a.best.toFixed(1)} MT · Avg: ${(a.total / a.shifts).toFixed(1)} MT`;
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // ── Chart 3: Team × Machine stacked bar ──
+  const tmLabels = Object.keys(teamMachMap)
+    .sort((a, b) => (teamStats[b]?.total || 0) - (teamStats[a]?.total || 0))
+    .slice(0, 10);
+  mkChart('chart-team-by-machine', {
+    type: 'bar',
+    data: {
+      labels: tmLabels.map(t => t.length > 16 ? t.slice(0, 16) + '…' : t),
+      datasets: MACHINES.map(m => ({
+        label: m,
+        data: tmLabels.map(t => +(teamMachMap[t]?.[m] || 0).toFixed(1)),
+        backgroundColor: MCOLORS[m] + '99',
+        borderColor: MCOLORS[m],
+        borderWidth: 1,
+      })),
+    },
+    options: {
+      ...baseOpts(),
+      scales: {
+        x: { ...baseOpts().scales.x, stacked: true, ticks: { color: C.tickColor, font: { size: 9 }, maxRotation: 35 } },
+        y: { ...baseOpts().scales.y, stacked: true },
+      },
+      plugins: {
+        ...baseOpts().plugins,
+        legend: { position: 'top', labels: { color: '#e0eeff', font: { size: 10 } } },
+      },
+    },
+  });
+
+  // ── Chart 4: Incharge avg MT/shift ──
+  mkChart('chart-anchage-avg', {
+    type: 'bar',
+    data: {
+      labels: anchAvgSort.map(x => x[0]),
+      datasets: [{
+        label: 'Avg MT per Shift',
+        data: anchAvgSort.map(x => +x[1].toFixed(1)),
+        backgroundColor: anchAvgSort.map((_, i) => anchColors[i % anchColors.length] + 'aa'),
+        borderColor:     anchAvgSort.map((_, i) => anchColors[i % anchColors.length]),
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      ...baseOpts(),
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...baseOpts().plugins.tooltip,
+          callbacks: {
+            afterLabel: (ctx) => {
+              const name = anchAvgSort[ctx.dataIndex][0];
+              const a = anchStats[name];
+              return a ? `  Total: ${a.total.toFixed(1)} MT · ${a.shifts} shifts` : '';
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // ── Performance table: grouped by incharge × team ──
+  // Build rows: one row per (incharge, primary_team) pair
+  const tableRows = anchSorted.map(([incharge, stats]) => {
+    const avgTon   = stats.shifts ? stats.total / stats.shifts : 0;
+    const avgAvail = stats.shifts ? stats.availSum / stats.shifts : 0;
+    const teams    = [...stats.teams].filter(t => t !== 'Unassigned').join(', ') || 'Unassigned';
+    return { incharge, teams, shifts: stats.shifts, total: stats.total, avgTon, best: stats.best, delayMin: stats.delayMin, avgAvail };
+  });
+
+  const tbody = document.getElementById('team-anchage-tbody');
+  if (tbody) {
+    tbody.innerHTML = tableRows.map((row, idx) => {
+      const rankColor = idx === 0 ? '#ffd94a' : idx === 1 ? '#9ca3af' : idx === 2 ? '#f97316' : 'var(--muted)';
+      const availColor = row.avgAvail > 85 ? '#00e5a0' : row.avgAvail > 70 ? '#ffd94a' : '#ff3b5c';
+      return `<tr>
+        <td style="font-weight:600;color:${rankColor}">${row.incharge}</td>
+        <td style="font-size:11px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${row.teams}">${row.teams.length > 30 ? row.teams.slice(0, 30) + '…' : row.teams}</td>
+        <td style="text-align:right">${row.shifts}</td>
+        <td style="text-align:right;font-weight:600;color:var(--accent3)">${row.total.toFixed(1)}</td>
+        <td style="text-align:right;color:var(--accent2)">${row.avgTon.toFixed(1)}</td>
+        <td style="text-align:right;color:var(--accent4)">${row.best.toFixed(1)}</td>
+        <td style="text-align:right;color:var(--danger)">${row.delayMin.toFixed(0)}</td>
+        <td style="text-align:right;color:${availColor};font-family:var(--font-mono)">${row.avgAvail.toFixed(1)}%</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
 function renderDelays(){
   const d=filteredData;
   const allDelays=[];
   let totalTime=0;
-  let maintTime=0;
+  let maintTime=0;          // MAINTENANCE BREAKDOWN (normType match)
+  let maintBreakdownTime=0; // PRIMARY: breakdown type + description keyword fallback
   let delayEventsCount=0;
   const dt={};
   const hmData={};
@@ -353,6 +850,16 @@ function renderDelays(){
       if (typeNorm === 'MAINTENANCE BREAKDOWN') {
         maintTime += dl.time;
       }
+      // PRIMARY downtime: breakdown type OR description keyword match
+      if (typeof getMaintenanceBreakdownDowntime === 'function') {
+        const BKWD_KW = ['breakdown','failure','repair','fault','trip'];
+        const desc = ((dl.reason || dl.description) || '').toLowerCase();
+        if (typeNorm === 'MAINTENANCE BREAKDOWN' || BKWD_KW.some(kw => desc.includes(kw))) {
+          maintBreakdownTime += dl.time;
+        }
+      } else {
+        maintBreakdownTime = maintTime; // safe fallback
+      }
 
       dt[typeNorm] = (dt[typeNorm] || 0) + dl.time;
 
@@ -362,32 +869,32 @@ function renderDelays(){
       if (!dateMap2[r.date]) dateMap2[r.date] = {};
       dateMap2[r.date][typeNorm] = (dateMap2[r.date][typeNorm] || 0) + dl.time;
 
-      if (allDelays.length < 200) {
-        allDelays.push({
-          time: dl.time,
-          type: typeNorm,
-          date: r.date,
-          machine: r.machine,
-          incharge: inchargeNorm,
-          shift: r.shift,
-          description: dl.description
-        });
-      }
+      allDelays.push({
+        time: dl.time,
+        type: typeNorm,
+        date: r.date,
+        machine: r.machine,
+        incharge: inchargeNorm,
+        shift: r.shift,
+        description: dl.description,
+        reason: dl.reason
+      });
     }
   }
 
   document.getElementById('kpi-delays').innerHTML=`
     <div class="kpi hero" style="--kpi-color:var(--danger)">
-      <div class="kpi-val">${totalTime.toFixed(0)} min</div><div class="kpi-lbl">TOTAL DELAY TIME</div>
-      <div class="kpi-sub">${(totalTime/60).toFixed(1)} hours</div></div>
+      <div class="kpi-val">${maintBreakdownTime.toFixed(0)} min</div>
+      <div class="kpi-lbl">MAINTENANCE BREAKDOWN DOWNTIME</div>
+      <div class="kpi-sub">${(maintBreakdownTime/60).toFixed(1)} h &nbsp;·&nbsp; ${d.length?+(maintBreakdownTime/d.length).toFixed(1):0} min/shift avg</div></div>
     <div class="kpi hero" style="--kpi-color:var(--accent2)">
       <div class="kpi-val">${delayEventsCount}</div><div class="kpi-lbl">TOTAL DELAY EVENTS</div></div>
-    <div class="kpi" style="--kpi-color:#ff3b5c">
-      <div class="kpi-val">${maintTime.toFixed(0)} min</div><div class="kpi-lbl">MAINTENANCE DOWNTIME</div>
-      <div class="kpi-sub">${d.length?+(maintTime/d.length).toFixed(1):0} min/shift avg</div></div>
+    <div class="kpi" style="--kpi-color:var(--accent4)">
+      <div class="kpi-val">${totalTime.toFixed(0)} min</div><div class="kpi-lbl">ALL DELAY TIME (TOTAL)</div>
+      <div class="kpi-sub">${(totalTime/60).toFixed(1)} hours incl. all categories</div></div>
     <div class="kpi" style="--kpi-color:var(--accent4)">
       <div class="kpi-val">${d.length?(totalTime/d.length).toFixed(0):0} min</div>
-      <div class="kpi-lbl">AVG DELAY/SHIFT</div></div>
+      <div class="kpi-lbl">AVG TOTAL DELAY/SHIFT</div></div>
   `;
 
   // Pareto
@@ -420,63 +927,164 @@ function renderDelays(){
 
   // Heatmap: incharge × delay type
   const incharges=[...uniqueIncharges].sort().slice(0,8);
-  const dtypes=[...uniqueTypes].sort().slice(0,8);
+  const dtypes=[...uniqueTypes].filter(t=>t!=='OTHER').sort().slice(0,10);
   const maxHm=Math.max(...Object.values(hmData),1);
 
   const hmEl=document.getElementById('heatmap-delay');
+  // Short label helper
+  const hmLabel = t => t.replace(' DELAY','').replace(' BREAKDOWN','BD').replace('MAINTENANCE','MAINT').replace('COMMUNICATION','COMM');
   hmEl.innerHTML=`
-    <div class="hmap-labels-row" style="margin-left:114px">
-      ${dtypes.map(t=>`<div class="hmap-label" style="min-width:80px">${t.length>10?t.slice(0,10)+'…':t}</div>`).join('')}
+    <div style="overflow-x:auto;padding-bottom:4px;">
+      <table style="border-collapse:collapse;min-width:100%;font-family:var(--font-mono);font-size:11px;">
+        <thead>
+          <tr>
+            <th style="width:120px;text-align:left;color:var(--muted);padding:6px 10px;font-size:9px;letter-spacing:.1em;border-bottom:1px solid var(--border)">INCHARGE</th>
+            ${dtypes.map(t=>`<th style="text-align:center;color:var(--muted);padding:6px 8px;font-size:9px;letter-spacing:.06em;border-bottom:1px solid var(--border);white-space:nowrap" title="${t}">${hmLabel(t)}</th>`).join('')}
+            <th style="text-align:center;color:var(--muted);padding:6px 8px;font-size:9px;border-bottom:1px solid var(--border)">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${incharges.map(ic=>{
+            const rowTotal = dtypes.reduce((s,dt2)=>s+(hmData[`${ic}__${dt2}`]||0),0);
+            return `<tr>
+              <td style="padding:5px 10px;color:var(--text);font-size:11px;white-space:nowrap;border-bottom:1px solid rgba(26,45,74,0.4)">${ic.split(' ')[0]}</td>
+              ${dtypes.map(dt2=>{
+                const v=hmData[`${ic}__${dt2}`]||0;
+                const pct=v/maxHm;
+                const bg=pct>0.6?`rgba(255,59,92,${0.2+pct*0.8})`:pct>0.2?`rgba(255,107,43,${0.15+pct*0.85})`:`rgba(0,200,255,${pct*0.35})`;
+                const fg=pct>0.5?'#fff':pct>0.15?'#e0eeff':'#5a7898';
+                return `<td style="text-align:center;padding:5px 8px;background:${v>0?bg:'transparent'};color:${fg};border-bottom:1px solid rgba(26,45,74,0.4);border-radius:2px" title="${ic} · ${dt2}: ${v} min">${v>0?v.toFixed(0):''}</td>`;
+              }).join('')}
+              <td style="text-align:center;padding:5px 8px;color:var(--accent2);font-weight:600;border-bottom:1px solid rgba(26,45,74,0.4)">${rowTotal>0?rowTotal.toFixed(0):''}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
     </div>
-    ${incharges.map(ic=>`
-      <div class="hmap-row">
-        <div class="hmap-row-label">${ic.split(' ')[0]}</div>
-        ${dtypes.map(dt=>{
-          const v=hmData[`${ic}__${dt}`]||0;
-          const pct=v/maxHm;
-          const bg=pct>0?`rgba(255,59,92,${0.1+pct*0.9})`:'rgba(16,28,48,0.5)';
-          const fg=pct>0.5?'#fff':'#9ca3af';
-          return `<div class="hmap-cell" style="background:${bg};color:${fg};min-width:80px;flex:1" title="${ic} · ${dt}: ${v} min">${v>0?v.toFixed(0):''}</div>`;
-        }).join('')}
-      </div>
-    `).join('')}
   `;
 
   // Delay trend
   const dateMap2Dates = Object.keys(dateMap2).sort((a,b)=>{const pa=a.split('.'),pb=b.split('.');return new Date(pa[2],pa[1]-1,pa[0])-new Date(pb[2],pb[1]-1,pb[0]);}).slice(-35);
   const top5types=sorted.slice(0,5).map(x=>x[0]);
+  // Short friendly labels for the legend
+  const shortLabel = t => t.replace(' DELAY','').replace(' BREAKDOWN','').replace(' MAINTENANCE','');
   mkChart('chart-delay-trend',{
     type:'line',
     data:{labels:dateMap2Dates,datasets:top5types.map(t=>({
-      label:t,data:dateMap2Dates.map(dt=>dateMap2[dt]?.[t]||0),
-      borderColor:delayColor(t),backgroundColor:'transparent',tension:.3,pointRadius:1,borderWidth:1.5,
+      label:shortLabel(t),
+      data:dateMap2Dates.map(dt=>dateMap2[dt]?.[t]||0),
+      borderColor:delayColor(t),
+      backgroundColor:delayColor(t)+'18',
+      tension:.35,pointRadius:2,pointHoverRadius:5,borderWidth:2,fill:false,
     }))},
-    options:{...baseOpts(),plugins:{...baseOpts().plugins,legend:{labels:{color:'#e0eeff',font:{size:9}}}}}
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{
+          position:'top',
+          labels:{color:'#e0eeff',font:{family:'Barlow',size:11},boxWidth:14,padding:14,usePointStyle:true,pointStyleWidth:10}
+        },
+        tooltip:{
+          backgroundColor:'#0c1525',borderColor:'#1a2d4a',borderWidth:1,
+          titleColor:'#00c8ff',bodyColor:'#e0eeff',
+          titleFont:{family:'Rajdhani',size:13,weight:'700'},
+          callbacks:{
+            title: items => items[0]?.label || '',
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y} min`
+          }
+        }
+      },
+      scales:{
+        x:{
+          grid:{color:'rgba(26,45,74,0.6)'},
+          ticks:{color:'#5a7898',font:{family:'JetBrains Mono',size:9},maxRotation:45,autoSkip:true,maxTicksLimit:14}
+        },
+        y:{
+          grid:{color:'rgba(26,45,74,0.6)'},
+          ticks:{color:'#5a7898',font:{family:'JetBrains Mono',size:10}},
+          title:{display:true,text:'Minutes',color:'#5a7898',font:{size:10}}
+        }
+      }
+    }
   });
 
-  // Delay log table
-  const tbody=document.getElementById('delay-tbody');
-  if(tbody){
-    tbody.innerHTML=allDelays.map(x=>{
-      const cat=(x.type==='MAINTENANCE BREAKDOWN'||x.type==='MAINTENANCE DAILY CHECKLIST')?'MAINTENANCE':x.type==='QUALITY DELAY'?'QUALITY':x.type==='OPERATION DELAY'?'OPERATION':'OTHER';
-      const catColor={'MAINTENANCE':'var(--danger)','QUALITY':'#a78bfa','OPERATION':'var(--accent3)','OTHER':'var(--muted)'}[cat];
-      return `<tr>
-        <td style="font-family:var(--font-mono);font-size:10px">${x.date}</td>
-        <td style="color:${MCOLORS[x.machine]||'#fff'}">${x.machine}</td>
-        <td><span class="pill pill-${x.shift?.toLowerCase()}">${x.shift}</span></td>
-        <td>${x.incharge}</td>
-        <td style="color:${delayColor(x.type)};font-size:11px">${x.type}</td>
-        <td style="text-align:right;font-weight:600;color:var(--accent2)">${x.time}</td>
-        <td style="font-size:11px;color:var(--muted)">${x.description||'—'}</td>
-        <td><span style="color:${catColor};font-size:10px;font-family:var(--font-mono)">${cat}</span></td>
-      </tr>`;
-    }).join('');
-  }
+  // Store allDelays on window so renderDelayTable can filter it
+  window._allDelays = allDelays;
+  renderDelayTable();
 }
 
 // ══════════════════════════════════
-//  MAINTENANCE
+//  DELAY LOG TABLE (filterable)
 // ══════════════════════════════════
+function renderDelayTable(){
+  const _catMap = {
+    'MAINTENANCE BREAKDOWN':'MAINTENANCE','MAINTENANCE DAILY CHECKLIST':'MAINTENANCE','PLANNED MAINTENANCE':'MAINTENANCE',
+    'COIL FEEDING DELAY':'COIL FEEDING',
+    'PACKAGING DELAY':'PACKAGING','PACKAGE SHIFTING':'PACKAGING',
+    'QUALITY DELAY':'QUALITY',
+    'OPERATION DELAY':'OPERATION','SETUP DELAY':'OPERATION',
+    'CRANE DELAY':'CRANE',
+    'SCRAP REMOVAL':'SCRAP','SCRAP SCHEDULE':'SCRAP',
+    'SHIFT HANDOVER':'HANDOVER','TBT':'HANDOVER',
+    'COMMUNICATION DELAY':'COMMUNICATION','HR DELAY':'HR','SCHEDULE DELAY':'SCHEDULE',
+    'OTHER':'OTHER',
+  };
+  const _catColors = {
+    'MAINTENANCE':'var(--danger)','COIL FEEDING':'var(--accent)',
+    'PACKAGING':'var(--accent4)','QUALITY':'#a78bfa',
+    'OPERATION':'var(--accent3)','CRANE':'#f97316',
+    'SCRAP':'#84cc16','HANDOVER':'#6b7280',
+    'COMMUNICATION':'#8b5cf6','HR':'#ec4899','SCHEDULE':'#60a5fa',
+    'OTHER':'var(--muted)',
+  };
+
+  const search   = (document.getElementById('delay-search')||{}).value?.toLowerCase()||'';
+  const machine  = (document.getElementById('delay-filter-machine')||{}).value||'ALL';
+  const shift    = (document.getElementById('delay-filter-shift')||{}).value||'ALL';
+  const sort     = (document.getElementById('delay-filter-sort')||{}).value||'DATE';
+
+  // Read active category chips (multi-select); fall back to ALL if none / ALL chip is active
+  const activeChips = [...(document.querySelectorAll('.delay-cat-chip.chip-active')||[])].map(el=>el.dataset.cat);
+  const categoryFilter = (activeChips.length === 0 || activeChips.includes('ALL')) ? 'ALL' : activeChips;
+
+  let rows = (window._allDelays||[]).filter(x=>{
+    if(machine!=='ALL' && x.machine!==machine) return false;
+    if(shift!=='ALL'   && x.shift!==shift)     return false;
+    if(categoryFilter !== 'ALL'){
+      const cat = _catMap[x.type]||'OTHER';
+      if(!categoryFilter.includes(cat)) return false;
+    }
+    if(search && ![x.incharge,x.reason||x.description,x.type,x.date].join(' ').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  if(sort==='TIME_DESC') rows=[...rows].sort((a,b)=>b.time-a.time);
+  else if(sort==='TIME_ASC') rows=[...rows].sort((a,b)=>a.time-b.time);
+  else if(sort==='TYPE') rows=[...rows].sort((a,b)=>a.type.localeCompare(b.type));
+
+  const countEl = document.getElementById('delay-filter-count');
+  if(countEl) countEl.textContent = `${rows.length} of ${(window._allDelays||[]).length} events`;
+
+  const tbody=document.getElementById('delay-tbody');
+  if(!tbody) return;
+  tbody.innerHTML=rows.slice(0,500).map(x=>{
+    const cat = _catMap[x.type]||'OTHER';
+    const catColor = _catColors[cat]||'var(--muted)';
+    return `<tr>
+      <td style="font-family:var(--font-mono);font-size:10px">${x.date}</td>
+      <td style="color:${MCOLORS[x.machine]||'#fff'}">${x.machine}</td>
+      <td><span class="pill pill-${x.shift?.toLowerCase()}">${x.shift}</span></td>
+      <td>${x.incharge}</td>
+      <td style="color:${delayColor(x.type)};font-size:11px">${x.type}</td>
+      <td style="text-align:right;font-weight:600;color:var(--accent2)">${x.time}</td>
+      <td style="font-size:11px;color:var(--muted)">${x.reason||x.description||x.type||'—'}</td>
+      <td><span style="color:${catColor};font-size:10px;font-family:var(--font-mono);font-weight:600">${cat}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+
 function renderMaintenance(){
   const d=filteredData;
   const maintEvents=[];
@@ -510,17 +1118,16 @@ function renderMaintenance(){
         }
         dateMap3[r.date] = (dateMap3[r.date] || 0) + dl.time;
 
-        if (maintEvents.length < 200) {
-          maintEvents.push({
+        maintEvents.push({
             time: dl.time,
             type: 'MAINTENANCE BREAKDOWN',
             date: r.date,
             machine: r.machine,
             incharge: inchargeNorm,
             shift: r.shift,
-            description: dl.description
+            description: dl.description,
+            reason: dl.reason
           });
-        }
       }
     }
   }
@@ -599,7 +1206,7 @@ function renderMaintenance(){
       <td>${x.incharge}</td>
       <td style="color:var(--danger);font-size:11px">${x.type}</td>
       <td style="text-align:right;font-weight:600;color:var(--accent2)">${x.time}</td>
-      <td style="font-size:11px;color:var(--muted)">${x.description||'—'}</td>
+      <td style="font-size:11px;color:var(--muted)">${x.reason||x.description||x.type||'—'}</td>
     </tr>`).join('');
   }
 }
@@ -614,6 +1221,7 @@ function renderAvailability(){
   let maxR={avail:-1};
   let availSum=0;
   let shiftsAbove85Count=0;
+  let maintBdTotal=0;  // for calculateAvailabilityTillDate
   
   const allAvail=[];
   const dateMap4={};
@@ -626,6 +1234,8 @@ function renderAvailability(){
     allAvail.push(rWithAvail);
 
     availSum += avail;
+    maintBdTotal += typeof getMaintenanceBreakdownDowntime === 'function'
+      ? getMaintenanceBreakdownDowntime(r.delays) : 0;
     if (avail < minR.avail) {
       minR = rWithAvail;
     }
@@ -654,16 +1264,23 @@ function renderAvailability(){
     maxR = { avail: 0 };
   }
 
+  const atd = calculateAvailabilityTillDate(d.length, maintBdTotal);
+
   document.getElementById('kpi-avail').innerHTML=`
     <div class="kpi hero" style="--kpi-color:var(--accent3)">
-      <div class="kpi-val">${avg.toFixed(1)}%</div><div class="kpi-lbl">AVG AVAILABILITY</div></div>
-    <div class="kpi hero" style="--kpi-color:var(--danger)">
+      <div class="kpi-val">${atd.availPct.toFixed(1)}%</div>
+      <div class="kpi-lbl">AVAILABILITY TILL DATE</div>
+      <div class="kpi-sub">${atd.availMinutes.toFixed(0)} min avail &nbsp;/&nbsp; ${atd.totalPlanned.toFixed(0)} min planned &nbsp;(${d.length} shifts × 480)</div></div>
+    <div class="kpi hero" style="--kpi-color:var(--accent)">
+      <div class="kpi-val">${avg.toFixed(1)}%</div><div class="kpi-lbl">AVG SHIFT AVAILABILITY</div>
+      <div class="kpi-sub">Per-shift avg (excl. OTHER delays)</div></div>
+    <div class="kpi" style="--kpi-color:var(--danger)">
       <div class="kpi-val">${minR.date ? minR.avail.toFixed(1) + '%' : '—'}</div><div class="kpi-lbl">LOWEST AVAILABILITY</div>
       <div class="kpi-sub">${minR.date ? `${minR.date} · ${minR.machine}` : 'No data loaded'}</div></div>
-    <div class="kpi" style="--kpi-color:var(--accent)">
+    <div class="kpi" style="--kpi-color:var(--accent4)">
       <div class="kpi-val">${maxR.date ? maxR.avail.toFixed(1) + '%' : '—'}</div><div class="kpi-lbl">HIGHEST AVAILABILITY</div>
       <div class="kpi-sub">${maxR.date ? `${maxR.date} · ${maxR.machine}` : 'No data loaded'}</div></div>
-    <div class="kpi" style="--kpi-color:var(--accent4)">
+    <div class="kpi" style="--kpi-color:#a78bfa">
       <div class="kpi-val">${shiftsAbove85Count}</div>
       <div class="kpi-lbl">SHIFTS &gt; 85% AVAIL</div></div>
   `;
@@ -685,26 +1302,45 @@ function renderAvailability(){
   });
 
   // Availability heatmap: date × machine
-  const dates4=Object.keys(dateMap4).sort((a,b)=>{const pa=a.split('.'),pb=b.split('.');return new Date(pa[2],pa[1]-1,pa[0])-new Date(pb[2],pb[1]-1,pb[0]);}).slice(-25);
+  const dates4=Object.keys(dateMap4).sort((a,b)=>{const pa=a.split('.'),pb=b.split('.');return new Date(pa[2],pa[1]-1,pa[0])-new Date(pb[2],pb[1]-1,pb[0]);}).slice(-30);
 
   const hmEl2=document.getElementById('heatmap-avail');
   hmEl2.innerHTML=`
-    <div class="hmap-labels-row" style="margin-left:90px">
-      ${MACHINES.map(m=>`<div class="hmap-label" style="min-width:80px;color:${MCOLORS[m]}">${m}</div>`).join('')}
-    </div>
-    ${dates4.map(dt=>`
-      <div class="hmap-row">
-        <div class="hmap-row-label" style="width:90px">${dt}</div>
-        ${MACHINES.map(m=>{
-          const arr=dateMap4[dt]?.[m]||[];
-          const v=arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
-          if(v===null) return `<div class="hmap-cell" style="background:rgba(16,28,48,0.3);min-width:80px;flex:1">—</div>`;
-          const g=v>85?`rgba(0,229,160,${0.2+v/100*0.7})`:v>70?`rgba(255,217,74,${0.3+v/100*0.5})`:`rgba(255,59,92,${0.3+v/100*0.5})`;
-          const fg=v>85?'#00e5a0':v>70?'#ffd94a':'#ff3b5c';
-          return `<div class="hmap-cell" style="background:${g};color:${fg};min-width:80px;flex:1;font-size:10px" title="${m} ${dt}: ${v.toFixed(1)}%">${v.toFixed(0)}%</div>`;
+    <table style="border-collapse:collapse;width:100%;font-family:var(--font-mono);font-size:11px;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px 12px;color:var(--muted);font-size:9px;letter-spacing:.1em;border-bottom:2px solid var(--border);width:110px;">DATE</th>
+          ${MACHINES.map(m=>`
+            <th style="text-align:center;padding:8px 16px;color:${MCOLORS[m]};font-size:11px;font-family:var(--font-head);letter-spacing:.08em;border-bottom:2px solid ${MCOLORS[m]}44;font-weight:700;">
+              ${m}
+            </th>
+          `).join('')}
+          <th style="text-align:center;padding:8px 12px;color:var(--muted);font-size:9px;letter-spacing:.1em;border-bottom:2px solid var(--border);">AVG</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${dates4.map((dt,rowIdx)=>{
+          const rowVals = MACHINES.map(m=>{
+            const arr=dateMap4[dt]?.[m]||[];
+            return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+          });
+          const validVals = rowVals.filter(v=>v!==null);
+          const rowAvg = validVals.length ? validVals.reduce((a,b)=>a+b,0)/validVals.length : null;
+          const rowBg = rowIdx%2===0 ? 'rgba(10,22,40,0.4)' : 'transparent';
+          return `<tr style="background:${rowBg}">
+            <td style="padding:7px 12px;color:var(--text);font-size:10px;white-space:nowrap;border-bottom:1px solid rgba(26,45,74,0.3);">${dt}</td>
+            ${rowVals.map((v,mi)=>{
+              if(v===null) return `<td style="text-align:center;padding:7px 16px;color:var(--muted);font-size:11px;border-bottom:1px solid rgba(26,45,74,0.3);">—</td>`;
+              const bg = v>85 ? `rgba(0,229,160,${0.12+v/100*0.55})` : v>70 ? `rgba(255,217,74,${0.12+v/100*0.45})` : `rgba(255,59,92,${0.15+(1-v/100)*0.6})`;
+              const fg = v>85 ? '#00e5a0' : v>70 ? '#ffd94a' : '#ff3b5c';
+              const bold = v<60 ? 'font-weight:700;' : '';
+              return `<td style="text-align:center;padding:7px 16px;background:${bg};color:${fg};${bold}border-bottom:1px solid rgba(26,45,74,0.3);border-radius:3px;" title="${MACHINES[mi]} on ${dt}: ${v.toFixed(1)}%">${v.toFixed(1)}%</td>`;
+            }).join('')}
+            <td style="text-align:center;padding:7px 12px;color:${rowAvg!==null?(rowAvg>85?'#00e5a0':rowAvg>70?'#ffd94a':'#ff3b5c'):'var(--muted)'};font-size:10px;border-bottom:1px solid rgba(26,45,74,0.3);font-weight:600;">${rowAvg!==null?rowAvg.toFixed(1)+'%':'—'}</td>
+          </tr>`;
         }).join('')}
-      </div>
-    `).join('')}
+      </tbody>
+    </table>
   `;
 
   // Pivot: incharge × shift
@@ -733,6 +1369,22 @@ function renderAvailability(){
 function renderML(){
   const d=filteredData;
 
+  // Only show machines that have actual uploaded data
+  const uploadedMachines = [...new Set(d.map(r => r.machine))];
+  const activeMachines = MACHINES.filter(m => uploadedMachines.includes(m));
+
+  if (activeMachines.length === 0) {
+    document.getElementById('kpi-ml').innerHTML = `
+      <div style="color:var(--muted);padding:20px;font-size:13px;">
+        No data uploaded. Use the Upload tab to load Excel files.
+      </div>`;
+    ['pred-next','ml-insights'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
+    return;
+  }
+
   // Find latest reference date
   let latestDate = new Date();
   if (d.length > 0) {
@@ -760,7 +1412,7 @@ function renderML(){
 
   // Per machine: rolling avg of breakdown intervals
   const mlData={};
-  MACHINES.forEach(m=>{
+  activeMachines.forEach(m=>{
     const mShifts = sortedD.filter(r => r.machine === m);
     const breakdownDates=[];
     mShifts.forEach(r=>{
@@ -796,7 +1448,7 @@ function renderML(){
     mlData[m]={avgInterval,daysSince,riskScore,daysUntil,mttr,mtbf,breakdowns:breakdownDates.length,intervals};
   });
 
-  document.getElementById('kpi-ml').innerHTML=MACHINES.map(m=>{
+  document.getElementById('kpi-ml').innerHTML=activeMachines.map(m=>{
     const ml=mlData[m];
     const risk=ml.riskScore;
     const color=risk>75?'var(--danger)':risk>50?'var(--accent4)':'var(--accent3)';
@@ -814,7 +1466,7 @@ function renderML(){
   `;
 
   // Prediction cards
-  document.getElementById('pred-next').innerHTML=MACHINES.map(m=>{
+  document.getElementById('pred-next').innerHTML=activeMachines.map(m=>{
     const ml=mlData[m];
     const risk=ml.riskScore;
     const riskClass=risk>75?'risk-high':risk>50?'risk-med':'risk-low';
@@ -837,9 +1489,9 @@ function renderML(){
   // MTTR/MTBF chart
   mkChart('chart-ml-mttr',{
     type:'bar',
-    data:{labels:MACHINES,datasets:[
-      {label:'MTTR (min)',data:MACHINES.map(m=>+mlData[m].mttr.toFixed(1)),backgroundColor:'rgba(255,107,43,0.7)',borderColor:'#ff6b2b',borderWidth:1},
-      {label:'MTBF (min)',data:MACHINES.map(m=>+mlData[m].mtbf.toFixed(1)),backgroundColor:'rgba(0,229,160,0.5)',borderColor:'#00e5a0',borderWidth:1},
+    data:{labels:activeMachines,datasets:[
+      {label:'MTTR (min)',data:activeMachines.map(m=>+mlData[m].mttr.toFixed(1)),backgroundColor:'rgba(255,107,43,0.7)',borderColor:'#ff6b2b',borderWidth:1},
+      {label:'MTBF (min)',data:activeMachines.map(m=>+mlData[m].mtbf.toFixed(1)),backgroundColor:'rgba(0,229,160,0.5)',borderColor:'#00e5a0',borderWidth:1},
     ]},
     options:baseOpts()
   });
@@ -858,7 +1510,7 @@ function renderML(){
 
   mkChart('chart-ml-rolling',{
     type:'line',
-    data:{labels:rollingDates,datasets:MACHINES.map(m=>({
+    data:{labels:rollingDates,datasets:activeMachines.map(m=>({
       label:m,
       data:rollingDates.map(dt=>{
         const idx=allDates.indexOf(dt);
@@ -877,17 +1529,17 @@ function renderML(){
   // Risk trend
   mkChart('chart-ml-risk',{
     type:'bar',
-    data:{labels:MACHINES,datasets:[{
-      label:'Risk Score (%)',data:MACHINES.map(m=>+mlData[m].riskScore.toFixed(1)),
-      backgroundColor:MACHINES.map(m=>{ const r=mlData[m].riskScore; return r>75?'rgba(255,59,92,0.7)':r>50?'rgba(255,217,74,0.7)':'rgba(0,229,160,0.7)'; }),
-      borderColor:MACHINES.map(m=>{ const r=mlData[m].riskScore; return r>75?'#ff3b5c':r>50?'#ffd94a':'#00e5a0'; }),
+    data:{labels:activeMachines,datasets:[{
+      label:'Risk Score (%)',data:activeMachines.map(m=>+mlData[m].riskScore.toFixed(1)),
+      backgroundColor:activeMachines.map(m=>{ const r=mlData[m].riskScore; return r>75?'rgba(255,59,92,0.7)':r>50?'rgba(255,217,74,0.7)':'rgba(0,229,160,0.7)'; }),
+      borderColor:activeMachines.map(m=>{ const r=mlData[m].riskScore; return r>75?'#ff3b5c':r>50?'#ffd94a':'#00e5a0'; }),
       borderWidth:1,
     }]},
     options:{...baseOpts(),scales:{...baseOpts().scales,y:{...baseOpts().scales.y,min:0,max:100}},plugins:{legend:{display:false}}}
   });
 
   // Insights
-  const ins=MACHINES.map(m=>{
+  const ins=activeMachines.map(m=>{
     const ml=mlData[m];
     const risk=ml.riskScore;
     const icon=risk>75?'🔴':risk>50?'🟡':'🟢';

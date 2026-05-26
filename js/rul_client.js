@@ -7,7 +7,7 @@
  * Depends on: AppState (Phase 4), your existing KPI helpers in analytics.js
  */
 
-const RUL_API_BASE = "http://localhost:8000";   // change to deployed URL in production
+const RUL_API_BASE = "http://127.0.0.1:8000";   // change to deployed URL in production
 
 // ──────────────────────────────────────────────
 // 1. BUILD PAYLOAD FROM AppState
@@ -27,10 +27,17 @@ function buildRULPayload(machine, records) {
   // Sort ascending by date
   const sorted = [...records].filter(r => r._parsedDate).sort((a, b) => a._parsedDate - b._parsedDate);
 
-  // Identify breakdown rows (mirrors your is_breakdown logic)
-  const BREAKDOWN_KEYWORDS = ["MECH", "ELEC", "HYD", "MECHANICAL", "ELECTRICAL", "HYDRAULIC"];
-  const isBreakdown = (r) =>
-    BREAKDOWN_KEYWORDS.some(k => String(r.delay_type || r["Delay Type"] || "").toUpperCase().includes(k));
+  // Identify breakdown rows (checks delays array inside each shift record)
+  const BREAKDOWN_KEYWORDS = ["MECH", "ELEC", "HYD", "MECHANICAL", "ELECTRICAL", "HYDRAULIC", "BREAKDOWN", "FAILURE", "REPAIR", "FAULT", "TRIP"];
+  const isBreakdown = (r) => {
+    if (!r.delays || !Array.isArray(r.delays)) return false;
+    return r.delays.some(d => {
+      const type = String(d._normType || d.type || "").toUpperCase();
+      const desc = String(d.reason || d.description || "").toUpperCase();
+      return type === "MAINTENANCE BREAKDOWN" || 
+             BREAKDOWN_KEYWORDS.some(k => type.includes(k) || desc.includes(k));
+    });
+  };
 
   const breakdowns = sorted.filter(isBreakdown);
 
@@ -51,9 +58,9 @@ function buildRULPayload(machine, records) {
     daysSinceLastBD = (now - breakdowns[0]._parsedDate) / msPerDay;
   }
 
-  // MTTR — mean delay_min for breakdown rows
+  // MTTR — mean breakdown minutes for breakdown rows
   const mttrMin = breakdowns.length > 0
-    ? breakdowns.reduce((s, r) => s + (r.totalDelayMin ?? r.delay_min ?? 0), 0) / breakdowns.length
+    ? breakdowns.reduce((s, r) => s + (typeof getMaintenanceBreakdownDowntime === 'function' ? getMaintenanceBreakdownDowntime(r.delays) : (r.totalDelayMin || 0)), 0) / breakdowns.length
     : 0;
 
   // Windows — 7d and 30d
@@ -72,7 +79,7 @@ function buildRULPayload(machine, records) {
 
   // Delay type diversity in last 30 days
   const delayTypes30 = new Set(
-    w30.map(r => String(r.delay_type || r["Delay Type"] || "").toUpperCase().trim()).filter(Boolean)
+    w30.flatMap(r => r.delays ? r.delays.map(d => String(d._normType || d.type || '').toUpperCase().trim()) : []).filter(Boolean)
   );
 
   return {
@@ -165,11 +172,24 @@ function renderRULCard(prediction, containerId) {
  */
 async function renderRULPredictions() {
   const dataStore = (typeof RAW_DATA !== 'undefined') ? RAW_DATA : [];
-  const machines = [
+  
+  // Only show machines with actual uploaded data
+  const uploadedMachines = [...new Set(dataStore.map(r => r.machine))];
+  const allMachines = [
     { id: "WCTL-1",  data: dataStore.filter(r => r.machine === "WCTL-1"),   cardId: "rul-card-wctl1"   },
     { id: "WCTL-2",  data: dataStore.filter(r => r.machine === "WCTL-2"),   cardId: "rul-card-wctl2"   },
     { id: "SLITTER", data: dataStore.filter(r => r.machine === "SLITTER"), cardId: "rul-card-slitter" },
   ];
+  
+  // Hide cards for machines without data
+  allMachines.forEach(({ cardId, id }) => {
+    const card = document.getElementById(cardId);
+    if (card && !uploadedMachines.includes(id)) {
+      card.style.display = 'none';
+    }
+  });
+  
+  const machines = allMachines.filter(m => uploadedMachines.includes(m.id));
 
   for (const { id, data, cardId } of machines) {
     const card = document.getElementById(cardId);

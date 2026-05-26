@@ -5,19 +5,22 @@ const DELAY_COLORS = {
   // Keys exactly match normDelay() output
   'MAINTENANCE BREAKDOWN':       '#ff3b5c',
   'MAINTENANCE DAILY CHECKLIST': '#ff6b2b',
+  'PLANNED MAINTENANCE':         '#fb923c',
   'COIL FEEDING DELAY':          '#00c8ff',
   'PACKAGING DELAY':             '#ffd94a',
+  'PACKAGE SHIFTING':            '#fbbf24',
   'QUALITY DELAY':               '#a78bfa',
   'OPERATION DELAY':             '#34d399',
   'CRANE DELAY':                 '#f97316',
   'SETUP DELAY':                 '#06b6d4',
   'SCRAP REMOVAL':               '#84cc16',
+  'SCRAP SCHEDULE':              '#65a30d',
   'SHIFT HANDOVER':              '#6b7280',
   'TBT':                         '#9ca3af',
   'COMMUNICATION DELAY':         '#8b5cf6',
   'HR DELAY':                    '#ec4899',
   'SCHEDULE DELAY':              '#60a5fa',
-  'OTHER':                       '#64748b',
+  'OTHER':                       '#64748b',   // excluded from zyada metric
 };
 
 function delayColor(t){ return DELAY_COLORS[t]||'#3b82f6'; }

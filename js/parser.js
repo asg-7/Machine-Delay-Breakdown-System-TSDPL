@@ -1,10 +1,26 @@
+// ─────────────────────────────────────────────────────────────
+//  parser.js  –  FIXED (v1.1)
+//  Bugs fixed:
+//    1. input.value reset after upload → re-uploading same / different file
+//       always fires onchange again
+//    2. filterRevision incremented after load → renderPage() re-renders
+//       instead of returning from cache
+//    3. SLITTER channel div onclick removed → no double-trigger conflict
+//       (clicks are now handled exclusively via label[for] in the HTML)
+// ─────────────────────────────────────────────────────────────
+
 async function handleUpload(event, machine) {
   const file = event.target.files[0];
+
+  // ── FIX 1: reset the input immediately so the same file can be
+  //           re-selected (or a different file chosen) next time
+  event.target.value = '';
+
   if (!file) return;
 
-  const channelId = `ch-${machine.toLowerCase().replace('-', '')}`;
+  const channelId = `ch-${machine.toLowerCase().replace(/-/g, '')}`;
   const statusDiv = document.getElementById('upload-status');
-  statusDiv.innerHTML = `⏳ Parsing ${file.name} for ${machine}...`;
+  statusDiv.innerHTML = `⏳ Parsing <strong>${file.name}</strong> for ${machine}…`;
 
   try {
     const data = await file.arrayBuffer();
@@ -14,18 +30,22 @@ async function handleUpload(event, machine) {
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
     // Remove completely empty rows
-    const nonEmptyRows = (rows || []).filter(r => Array.isArray(r) && r.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== ''));
+    const nonEmptyRows = (rows || []).filter(r =>
+      Array.isArray(r) && r.some(cell =>
+        cell !== undefined && cell !== null && String(cell).trim() !== ''
+      )
+    );
     if (!nonEmptyRows || nonEmptyRows.length < 1) throw new Error('File has no data rows');
 
-    const normalize = (s) => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    const normalize = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
-    // Try to locate a header row within the first 10 non-empty rows
+    // Locate header row within the first 10 non-empty rows
     let headerRowIndex = -1;
     let detectedHeaders = [];
     for (let i = 0; i < Math.min(10, nonEmptyRows.length); i++) {
       const r = nonEmptyRows[i];
       const norm = r.map(cell => normalize(cell));
-      const hasDate = norm.some(c => c.includes('DATE'));
+      const hasDate  = norm.some(c => c.includes('DATE'));
       const hasShift = norm.some(c => c === 'SHIFT' || c.includes('SHIFT'));
       if (hasDate && hasShift) {
         headerRowIndex = i;
@@ -40,84 +60,135 @@ async function handleUpload(event, machine) {
     if (headerRowIndex !== -1) {
       dataStartRow = headerRowIndex + 1;
       colIndex = {
-        DATE: detectedHeaders.findIndex(h => h.includes('DATE')),
-        SHIFT: detectedHeaders.findIndex(h => h === 'SHIFT' || h.includes('SHIFT')),
-        INCHARGE: detectedHeaders.findIndex(h => h.includes('INCHARGE') || h === 'SHIFT INCHARGE'),
-        TEAM: detectedHeaders.findIndex(h => h === 'TEAM' || h.includes('TEAM')),
-        TONNAGE: detectedHeaders.findIndex(h => h.includes('TONNAGE') || h === 'MT'),
-        COIL: detectedHeaders.findIndex(h => h.includes('COIL') || h.includes('COILS') || h.includes('NO OF')),
-        TIME: detectedHeaders.findIndex(h => h.includes('TIME') || h.includes('DURATION')),
-        REASON: detectedHeaders.findIndex(h => h.includes('REASON')),
+        DATE:        detectedHeaders.findIndex(h => h.includes('DATE')),
+        SHIFT:       detectedHeaders.findIndex(h => h === 'SHIFT' || h.includes('SHIFT')),
+        INCHARGE:    detectedHeaders.findIndex(h => h.includes('INCHARGE') || h === 'SHIFT INCHARGE'),
+        TEAM:        detectedHeaders.findIndex(h => h === 'TEAM' || h.includes('TEAM')),
+        TONNAGE:     detectedHeaders.findIndex(h => h.includes('TONNAGE') || h === 'MT'),
+        COIL:        detectedHeaders.findIndex(h => h.includes('COIL') || h.includes('COILS') || h.includes('NO OF')),
+        TIME:        detectedHeaders.findIndex(h => h.includes('TIME') || h.includes('DURATION')),
+        REASON:      detectedHeaders.findIndex(h => h.includes('REASON')),
         DESCRIPTION: detectedHeaders.findIndex(h => h.includes('DESCRIPTION') || h.includes('REMARK') || h.includes('DESC')),
       };
 
-      // WCTL-2 layout fallback overrides (which has MT for Tonnage and blank header for Reason)
-      if (colIndex.REASON === -1 || colIndex.DESCRIPTION === -1) {
+      // WCTL-2 fallback (uses MT for Tonnage and blank header for Reason/Description columns)
+      if (colIndex.REASON === -1 && colIndex.DESCRIPTION === -1) {
         if (detectedHeaders.some(h => h === 'MT') || detectedHeaders.some(h => h === 'LINE')) {
-          colIndex.REASON = 11;
+          colIndex.REASON      = 11;
           colIndex.DESCRIPTION = 12;
           console.log('✏️ Detected WCTL-2 style columns. Overriding: REASON=11, DESCRIPTION=12');
         }
       }
       console.log('✅ Header detected at nonEmpty row', headerRowIndex, detectedHeaders);
     } else {
-      // Fallback: assume original SLITDELAY layout (A=DATE, B=SHIFT, C=INCHARGE, D=TEAM, E=TONNAGE, F=COIL, H=TIME, J=REASON, K=DESCRIPTION)
-      console.warn('⚠️ No header row with DATE/SHIFT found. Falling back to fixed columns (A=DATE,B=SHIFT,C=INCHARGE,D=TEAM,E=TONNAGE,F=COIL,H=TIME,J=REASON,K=DESCRIPTION)');
+      // Fallback: original SLITDELAY fixed-column layout
+      console.warn('⚠️ No header row with DATE/SHIFT found. Falling back to fixed columns.');
       dataStartRow = 0;
-      colIndex = { DATE: 0, SHIFT: 1, INCHARGE: 2, TEAM: 3, TONNAGE: 4, COIL: 5, TIME: 7, REASON: 9, DESCRIPTION: 10 };
+      colIndex = { DATE:0, SHIFT:1, INCHARGE:2, TEAM:3, TONNAGE:4, COIL:5, TIME:7, REASON:9, DESCRIPTION:10 };
     }
 
     if (colIndex.DATE === -1 || colIndex.SHIFT === -1) {
       throw new Error(`Could not locate DATE or SHIFT column. Tried headers: ${detectedHeaders.join(', ')}`);
     }
 
-    const shifts = [];
-    const shiftMap = {};
-    let validRows = 0;
+    const shifts    = [];
+    const shiftMap  = {};
+    let   validRows = 0;
 
-    let lastDate = null;
-    let lastShift = null;
+    let lastDate    = null;
+    let lastShift   = null;
     let lastIncharge = '';
-    let lastTeam = '';
+    let lastTeam    = '';
 
     for (let i = dataStartRow; i < nonEmptyRows.length; i++) {
       const row = nonEmptyRows[i];
-      let rawDate = row[colIndex.DATE];
+      let rawDate  = row[colIndex.DATE];
       let rawShift = row[colIndex.SHIFT];
-      
-      let isEmptyDate = rawDate === undefined || rawDate === null || String(rawDate).trim() === '';
-      let isEmptyShift = rawShift === undefined || rawShift === null || String(rawShift).trim() === '';
 
-      if (isEmptyDate && lastDate) rawDate = lastDate;
+      const isEmptyDate  = rawDate  === undefined || rawDate  === null || String(rawDate).trim()  === '';
+      const isEmptyShift = rawShift === undefined || rawShift === null || String(rawShift).trim() === '';
+
+      if (isEmptyDate  && lastDate)  rawDate  = lastDate;
       if (isEmptyShift && lastShift) rawShift = lastShift;
 
       if (rawDate === undefined || rawDate === null || String(rawDate).trim() === '') continue;
 
+      // ── DATE NORMALISATION (strict) ──────────────────────────────
+      // All dates are canonicalised to DD.MM.YYYY before being stored.
+      // This ensures the dedup key is always identical for the same calendar date,
+      // even if the raw value arrives as a serial number, "1.5.2026", "01-05-2026", etc.
       let date = rawDate;
+      let dateValid = true;
+
       if (typeof date === 'number') {
+        // Excel serial date — use SheetJS decoder (always reliable for >= 1900 serials)
         const pd = XLSX.SSF.parse_date_code(date);
-        if (pd.y < 2000) {
-          const str = String(rawDate);
-          if (str.includes('.')) {
-            const parts = str.split('.');
-            if (parts[1].length === 6) {
-              date = `${parts[0].padStart(2,'0')}.${parts[1].substring(0,2)}.${parts[1].substring(2)}`;
-            } else {
-              date = `${String(pd.d).padStart(2, '0')}.${String(pd.m).padStart(2, '0')}.${pd.y}`;
-            }
-          } else {
-            date = `${String(pd.d).padStart(2, '0')}.${String(pd.m).padStart(2, '0')}.${pd.y}`;
-          }
+        // Sanity-check: reject obviously wrong years
+        if (!pd || pd.y < 2000 || pd.y > 2100) {
+          // SheetJS sometimes returns 1900 for text-stored dates it can't parse.
+          // Try treating the raw number as a string-encoded date (e.g. 10052026 → rare)
+          dateValid = false;
         } else {
-          date = `${String(pd.d).padStart(2, '0')}.${String(pd.m).padStart(2, '0')}.${pd.y}`;
-        }
-      } else {
-        date = String(date).trim();
-        if (date.includes('-')) {
-          const parts = date.split('-');
-          if (parts.length === 3) date = `${parts[2]}.${parts[1]}.${parts[0]}`;
+          date = `${String(pd.d).padStart(2,'0')}.${String(pd.m).padStart(2,'0')}.${pd.y}`;
         }
       }
+
+      if (!dateValid || typeof rawDate !== 'number') {
+        // String path — handle DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD
+        date = String(rawDate).trim();
+        let dd, mm, yy;
+
+        if (date.includes('.')) {
+          const p = date.split('.');
+          // Could be DD.MM.YYYY or DD.MM.YY
+          if (p.length === 3) {
+            [dd, mm, yy] = p;
+            if (yy.length === 2) yy = '20' + yy;   // 26 → 2026
+          }
+        } else if (date.includes('/')) {
+          const p = date.split('/');
+          if (p.length === 3) {
+            // Assume DD/MM/YYYY (Indian standard)
+            [dd, mm, yy] = p;
+            if (yy.length === 2) yy = '20' + yy;
+          }
+        } else if (date.includes('-')) {
+          const p = date.split('-');
+          if (p.length === 3) {
+            if (p[0].length === 4) {
+              // YYYY-MM-DD (ISO)
+              [yy, mm, dd] = p;
+            } else {
+              // DD-MM-YYYY
+              [dd, mm, yy] = p;
+              if (yy.length === 2) yy = '20' + yy;
+            }
+          }
+        }
+
+        if (dd && mm && yy) {
+          dd = String(dd).padStart(2, '0');
+          mm = String(mm).padStart(2, '0');
+          yy = String(yy);
+          // Validate ranges
+          const dNum = parseInt(dd), mNum = parseInt(mm), yNum = parseInt(yy);
+          if (dNum >= 1 && dNum <= 31 && mNum >= 1 && mNum <= 12 && yNum >= 2000 && yNum <= 2100) {
+            date = `${dd}.${mm}.${yy}`;
+            dateValid = true;
+          } else {
+            dateValid = false;
+          }
+        } else {
+          dateValid = false;
+        }
+      }
+
+      // Skip rows with unparseable or out-of-range dates; log a warning
+      if (!dateValid) {
+        console.warn(`⚠️ Skipped row ${i}: unrecognised date value "${rawDate}"`);
+        continue;
+      }
+      // ── END DATE NORMALISATION ───────────────────────────────────
 
       const shift = String(rawShift || '').trim().toUpperCase();
       if (!shift) continue;
@@ -129,32 +200,45 @@ async function handleUpload(event, machine) {
       let team = row[colIndex.TEAM];
       if ((team === undefined || team === null || String(team).trim() === '') && lastTeam) team = lastTeam;
 
-      let tonnage = parseFloat(row[colIndex.TONNAGE]);
-      if (isNaN(tonnage)) tonnage = 0;
-      let coils = parseFloat(row[colIndex.COIL]);
-      if (isNaN(coils)) coils = 0;
+      let tonnage = parseFloat(row[colIndex.TONNAGE]); if (isNaN(tonnage)) tonnage = 0;
+      let coils   = parseFloat(row[colIndex.COIL]);    if (isNaN(coils))   coils   = 0;
 
-      lastDate = rawDate;
-      lastShift = rawShift;
+      lastDate     = rawDate;
+      lastShift    = rawShift;
       lastIncharge = incharge;
-      lastTeam = team;
+      lastTeam     = team;
 
-      const key = `${date}|${shift}|${incharge}|${team}`;
+      // Dedup key: date is already canonical DD.MM.YYYY; trim incharge + team to avoid ghost duplicates
+      const keyIncharge = String(incharge || '').trim().toUpperCase();
+      const keyTeam     = String(team     || '').trim().toUpperCase();
+      const key = `${date}|${shift}|${keyIncharge}|${keyTeam}`;
       let shiftObj = shiftMap[key];
       if (!shiftObj) {
         shiftObj = { date, shift, incharge: normIncharge(incharge), team, machine, tonnage, coils, delays: [] };
-        shiftMap[key] = shiftObj;
+        shiftMap[key]  = shiftObj;
         shifts.push(shiftObj);
       } else {
         shiftObj.tonnage = Math.max(shiftObj.tonnage, tonnage);
-        shiftObj.coils = Math.max(shiftObj.coils, coils);
+        shiftObj.coils   = Math.max(shiftObj.coils, coils);
       }
 
       const time = parseInt(row[colIndex.TIME]);
       if (time && !isNaN(time) && time > 0) {
-        let reason = row[colIndex.REASON] || '';
-        let description = row[colIndex.DESCRIPTION] || '';
-        shiftObj.delays.push({ time: time, type: normDelay(reason), description: description });
+        const reason      = String(row[colIndex.REASON]      || '').trim();
+        const description = String(row[colIndex.DESCRIPTION] || '').trim();
+        const extraReason = row.slice(Math.max(colIndex.REASON, colIndex.DESCRIPTION) + 1)
+          .map(cell => String(cell || '').trim())
+          .find(val => val && !/^#REF!$/i.test(val));
+        const delayReason = reason || extraReason || description;
+
+        // The REASON column may contain the detailed reason-for-delay text,
+        // while DESCRIPTION often carries the generic delay label. If the right
+        // side of the row has extra non-empty text, prefer that as the true reason.
+        const typeFromDesc   = description ? normDelay(description) : 'OTHER';
+        const typeFromReason = (reason || extraReason) ? normDelay(reason || extraReason) : 'OTHER';
+        const resolvedType   = (typeFromDesc !== 'OTHER') ? typeFromDesc : typeFromReason;
+
+        shiftObj.delays.push({ time, type: resolvedType, description, reason: delayReason });
       }
       validRows++;
     }
@@ -163,29 +247,54 @@ async function handleUpload(event, machine) {
       throw new Error(`No shifts found. First few data rows: ${JSON.stringify(nonEmptyRows.slice(dataStartRow, dataStartRow + 3))}`);
     }
 
-    // Replace data for this machine
+    // ── DATE RANGE VALIDATION WARNING ────────────────────────────
+    const now = new Date();
+    const warnDates = [];
+    for (const s of shifts) {
+      const p = s.date.split('.');
+      if (p.length === 3) {
+        const d = new Date(p[2], p[1] - 1, p[0]);
+        if (d > now) warnDates.push(`${s.date} (future)`);
+        else if (parseInt(p[2]) < 2000) warnDates.push(`${s.date} (pre-2000)`);
+      }
+    }
+    if (warnDates.length > 0) {
+      statusDiv.innerHTML += `<br>⚠️ <span style="color:var(--accent4)">Suspicious dates detected (${warnDates.length}):</span> ${warnDates.slice(0,5).join(', ')}${warnDates.length>5?' …':''} — check source file.`;
+    }
+    // ── END DATE RANGE VALIDATION ─────────────────────────────────
+
+    // Replace data for this machine only
     window.RAW_DATA = RAW_DATA.filter(entry => entry.machine !== machine);
     window.RAW_DATA.push(...shifts);
 
-    // Update UI
+    // Update channel card UI
     const channelDiv = document.getElementById(channelId);
     if (channelDiv) channelDiv.classList.add('loaded');
-    const countSpan = document.getElementById(`cnt-${machine.toLowerCase().replace('-', '')}`);
+    const countSpan = document.getElementById(`cnt-${machine.toLowerCase().replace(/-/g,'')}`);
     if (countSpan) countSpan.textContent = shifts.length;
 
-    statusDiv.innerHTML += `<br>✅ <span style="color:var(--accent3)">${machine}</span>: ${shifts.length} shifts loaded (${validRows} delay rows). Old data replaced.`;
+    statusDiv.innerHTML += `<br>✅ <span style="color:var(--accent3)">${machine}</span>: ${shifts.length} shifts loaded (${validRows} delay rows). Old ${machine} data replaced.`;
 
-    // Refresh dashboard
+    // Refresh filters and data
     populateFilters();
-    // Reset filter dropdowns so stale selections don't hide the newly loaded data
     document.getElementById('f-incharge').value = 'ALL';
-    document.getElementById('f-delay').value = 'ALL';
+    document.getElementById('f-delay').value    = 'ALL';
     applyFilters();
+
+    // ── FIX 2: bump filterRevision so renderPage() doesn't skip re-render
+    window.filterRevision = (window.filterRevision || 0) + 1;
+    window.renderedRevisions = {};   // clear all page caches
+
     const activeTab = document.querySelector('.tab.active');
     if (activeTab) renderPage(activeTab.dataset.page);
 
+    // Kick off anomaly detection if server is up
+    if (typeof runAnomalyDetection === 'function' && window.RAW_DATA.length > 0) {
+      runAnomalyDetection(window.RAW_DATA);
+    }
+
   } catch (err) {
     console.error(err);
-    statusDiv.innerHTML += `<br>❌ Error: ${err.message}. Check console (F12) for details.`;
+    statusDiv.innerHTML += `<br>❌ <strong>Error:</strong> ${err.message}. Open DevTools (F12) → Console for details.`;
   }
 }

@@ -14,25 +14,93 @@ function normIncharge(name){
   return n;
 }
 
-// Normalize delay types
+// Normalize delay types — covers raw Excel text variants from operators
 function normDelay(t){
-  if(!t||t==='nan') return 'OTHER';
-  const u=t.toUpperCase().trim();
-  if(u.includes('MAINTENANCE BREAKDOWN')) return 'MAINTENANCE BREAKDOWN';
-  if(u.includes('MAINTENANCE DAILY')) return 'MAINTENANCE DAILY CHECKLIST';
-  if(u.includes('COIL FEEDING')) return 'COIL FEEDING DELAY';
-  if(u.includes('QUALITY')) return 'QUALITY DELAY';
-  if(u.includes('PACKET')||u.includes('PACKAGING')||u.includes('PACKING')) return 'PACKAGING DELAY';
-  if(u.includes('SHIFT HAND')) return 'SHIFT HANDOVER';
-  if(u.includes('OPERATION')||u.includes('OPRATION')) return 'OPERATION DELAY';
-  if(u.includes('CRANE')) return 'CRANE DELAY';
+  if(!t||t==='nan'||t===''||t===null||t===undefined) return 'OTHER';
+  const u=String(t).toUpperCase().trim();
+
+  // ── Maintenance Breakdown (check BEFORE generic maintenance) ──
+  if(u.includes('MAINTENANCE BREAKDOWN')||u.includes('MAINT BREAKDOWN')||
+     u.includes('M/C BREAKDOWN')||u.includes('MACHINE BREAKDOWN')||
+     u.includes('BREAKDOWN')||u.includes('BREAK DOWN')||
+     u.includes('FAILURE')||u.includes('FAULT')||u.includes('TRIP')||
+     u.includes('REPAIR')) return 'MAINTENANCE BREAKDOWN';
+
+  // ── Maintenance Daily Checklist ──
+  if(u.includes('DAILY CHECKLIST')||u.includes('MAINTENANCE DAILY')||
+     u.includes('MAINT CHECKLIST')||u.includes('MAINTENANCE CHECKLIST')||
+     u.includes('DAILY CHECK')) return 'MAINTENANCE DAILY CHECKLIST';
+
+  // ── Planned Maintenance ──
+  if(u.includes('PLANNED MAINTENANCE')||u.includes('PLANNED MAINT')||
+     u.includes('PM ')||u==='PM') return 'PLANNED MAINTENANCE';
+
+  // ── Generic maintenance fallback (after specific ones above) ──
+  if(u.includes('MAINTENANCE')||u.includes('MAINT')) return 'MAINTENANCE BREAKDOWN';
+
+  // ── Coil Feeding ──
+  if(u.includes('COIL FEEDING')||u.includes('COIL FEED')||
+     u.includes('TOTAL COIL')||u.includes('COIL DELAY')) return 'COIL FEEDING DELAY';
+
+  // ── Quality ──
+  if(u.includes('QUALITY INSPECTION')||u.includes('TOTAL QUALITY')||
+     u.includes('QUALITY')) return 'QUALITY DELAY';
+
+  // ── Packaging / Shifting / Packet ──
+  if(u.includes('PACKET SHIFTING')||u.includes('PACKAGE SHIFTING')||
+     u.includes('PACKAGING SHIFTING')||u.includes('PACKET SHIFTING/PACKAGING')) return 'PACKAGE SHIFTING';
+  if(u.includes('PACKET')||u.includes('PACKAGING')||u.includes('PACKING')||
+     u.includes('PACK ')) return 'PACKAGING DELAY';
+
+  // ── Shift Handover / TBT ──
+  if(u.includes('SHIFT HAND')||u.includes('HANDOVER')||u.includes('HAND OVER')) return 'SHIFT HANDOVER';
+  if(u.includes('TBT')||u.includes('TOOL BOX TALK')||u.includes('TOOLBOX')) return 'TBT';
+
+  // ── Scrap ──
+  if(u.includes('SCRAP SCHEDULE')) return 'SCRAP SCHEDULE';
   if(u.includes('SCRAP')) return 'SCRAP REMOVAL';
-  if(u.includes('SETUP')) return 'SETUP DELAY';
-  if(u.includes('TBT')) return 'TBT';
-  if(u.includes('COMMUNICATION')||u.includes('MEETING')) return 'COMMUNICATION DELAY';
-  if(u.includes('HR')) return 'HR DELAY';
+
+  // ── Crane ──
+  if(u.includes('CRANE')) return 'CRANE DELAY';
+
+  // ── Operation / Setup ──
+  if(u.includes('OPERATION')||u.includes('OPRATION')||u.includes('OPERATIONAL')) return 'OPERATION DELAY';
+  if(u.includes('SETUP')||u.includes('SET UP')||u.includes('SET-UP')) return 'SETUP DELAY';
+
+  // ── Communication / HR / Schedule ──
+  if(u.includes('COMMUNICATION')||u.includes('MEETING')||u.includes('COMM ')) return 'COMMUNICATION DELAY';
+  if(u.includes('HR ')||u==='HR'||u.includes('HUMAN RESOURCE')) return 'HR DELAY';
   if(u.includes('SCHEDULE')) return 'SCHEDULE DELAY';
+
+  // ── Explicit "OTHER" (catch last so nothing leaks in early) ──
+  if(u==='OTHER'||u==='OTHER DELAY') return 'OTHER';
+
+  // Unknown → OTHER
   return 'OTHER';
+}
+
+/**
+ * Returns total downtime EXCLUDING "OTHER" delay category.
+ */
+function getDowntimeExcludingOther(delays){
+  return delays
+    .filter(d => (d._normType || normDelay(d.type)) !== 'OTHER')
+    .reduce((sum, d) => sum + d.time, 0);
+}
+
+/**
+ * Returns total downtime from MAINTENANCE BREAKDOWN delays only.
+ */
+function getMaintenanceBreakdownDowntime(delays) {
+  const BREAKDOWN_DESC_KEYWORDS = ['breakdown','break down','failure','repair','fault','trip'];
+  return delays
+    .filter(d => {
+      const nt = d._normType || normDelay(d.type || '');
+      if (nt === 'MAINTENANCE BREAKDOWN') return true;
+      const desc = ((d.reason || d.description) || '').toLowerCase();
+      return BREAKDOWN_DESC_KEYWORDS.some(kw => desc.includes(kw));
+    })
+    .reduce((sum, d) => sum + d.time, 0);
 }
 
 function isMaintenance(type){
@@ -46,17 +114,17 @@ function prepareRawData() {
     if (r._parsedDate === undefined) {
       r._parsedDate = parseDate(r.date);
       r._normIncharge = normIncharge(r.incharge);
-      r.totalDelayMin = r.delays.reduce((sum, d) => sum + d.time, 0);
-      r.availabilityPct = Math.max(0, ((480 - r.totalDelayMin) / 480 * 100));
       for (let j = 0; j < r.delays.length; j++) {
         r.delays[j]._normType = normDelay(r.delays[j].type);
       }
+      r.totalDelayMin = r.delays.reduce((sum, d) => sum + d.time, 0);
+      const effectiveDelay = getDowntimeExcludingOther(r.delays);
+      r.availabilityPct = Math.max(0, ((480 - effectiveDelay) / 480 * 100));
     }
   }
 }
 
 function populateFilters(){
-  // Clear dynamic options first to prevent duplicates on re-upload
   const sel=document.getElementById('f-incharge');
   while(sel.options.length>1) sel.remove(1);
   const ds=document.getElementById('f-delay');
