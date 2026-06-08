@@ -267,6 +267,17 @@ async function handleUpload(event, machine) {
     window.RAW_DATA = RAW_DATA.filter(entry => entry.machine !== machine);
     window.RAW_DATA.push(...shifts);
 
+    // Persist parsed data to backend for global sharing
+    fetch(`http://127.0.0.1:8000/api/upload-data?machine=${encodeURIComponent(machine)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(shifts)
+    }).then(res => {
+      if (res.ok) console.log(`Successfully synced ${machine} data to backend server.`);
+    }).catch(err => {
+      console.warn("FastAPI backend offline. Data is kept in-memory for this session.", err);
+    });
+
     // Update channel card UI
     const channelDiv = document.getElementById(channelId);
     if (channelDiv) channelDiv.classList.add('loaded');

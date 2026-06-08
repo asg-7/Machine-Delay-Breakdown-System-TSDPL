@@ -16,7 +16,7 @@ Install:
 import json
 import pickle
 from pathlib import Path
-from typing import Literal
+from typing import Literal, List, Dict, Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -217,3 +217,76 @@ def predict(req: PredictRequest):
         advice        = build_advice(rul, band, req),
         feature_contributions = top_feature_contributions(feature_vector),
     )
+
+
+# ──────────────────────────────────────────────
+# PERSISTENCE ENDPOINTS
+# ──────────────────────────────────────────────
+
+UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploaded_data"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+@app.post("/api/upload-data")
+def upload_data(machine: str, data: List[Dict[str, Any]]):
+    if machine not in ["SLITTER", "WCTL-1", "WCTL-2"]:
+        raise HTTPException(status_code=400, detail="Invalid machine name")
+    
+    file_path = UPLOAD_DIR / f"{machine}.json"
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"status": "ok", "message": f"Data for {machine} saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save data: {e}")
+
+@app.get("/api/get-data")
+def get_data():
+    all_shifts = []
+    machines = ["SLITTER", "WCTL-1", "WCTL-2"]
+    for m in machines:
+        file_path = UPLOAD_DIR / f"{m}.json"
+        if file_path.exists():
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    shifts = json.load(f)
+                    if isinstance(shifts, list):
+                        all_shifts.extend(shifts)
+            except Exception as e:
+                print(f"Error reading {m}.json: {e}")
+    return all_shifts
+
+@app.post("/api/operator-log")
+def operator_log(log_entry: Dict[str, Any]):
+    file_path = UPLOAD_DIR / "operator_logs.json"
+    logs = []
+    if file_path.exists():
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+                if not isinstance(logs, list):
+                    logs = []
+        except Exception as e:
+            print(f"Error reading operator_logs.json: {e}")
+            logs = []
+    
+    logs.append(log_entry)
+    
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(logs, f, ensure_ascii=False, indent=2)
+        return {"status": "ok", "message": "Operator log saved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save operator log: {e}")
+
+@app.get("/api/operator-logs")
+def get_operator_logs():
+    file_path = UPLOAD_DIR / "operator_logs.json"
+    if file_path.exists():
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+                if isinstance(logs, list):
+                    return logs
+        except Exception as e:
+            print(f"Error reading operator_logs.json: {e}")
+    return []

@@ -478,12 +478,315 @@ tr:hover td { background: rgba(0,200,255,.03); }
 @media (max-width: 900px) {
   .g2, .g3, .g12 { grid-template-columns: 1fr; }
   .filters { gap: 8px; }
-  select, input[type="text"] { min-width: 120px; }
+select, input[type="text"] { min-width: 120px; }
+}
+
+/* ── LOGIN & OPERATOR STYLES ── */
+#login-container {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  position: fixed; inset: 0; background: var(--bg); z-index: 1000; padding: 20px;
+}
+.login-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 36px 30px; width: 100%; max-width: 400px; text-align: center;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+}
+.login-header {
+  display: flex; align-items: center; gap: 14px; justify-content: center; margin-bottom: 24px;
+}
+.login-title {
+  font-family: var(--font-head); font-size: 20px; font-weight: 700;
+  letter-spacing: 2px; color: var(--text); text-align: left;
+}
+.login-sub {
+  font-size: 11px; color: var(--muted); letter-spacing: 0.5px; text-align: left; margin-top: 2px;
+}
+.login-btn {
+  background: var(--accent); color: #000; border: none; border-radius: 6px;
+  font-family: var(--font-head); font-weight: 700; font-size: 14px; letter-spacing: 1px;
+  width: 100%; padding: 12px; cursor: pointer; transition: all 0.2s; margin-top: 10px;
+}
+.login-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.login-footer {
+  font-size: 10px; color: var(--muted); margin-top: 24px; line-height: 1.5;
+}
+
+#operator-container {
+  min-height: 100vh; background: var(--bg); color: var(--text); display: none;
+}
+.entry-row {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px 20px; position: relative; transition: border-color 0.2s; margin-bottom: 12px;
+}
+.entry-row:hover { border-color: var(--accent); }
+.entry-row.has-error { border-color: var(--danger); }
+.entry-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+}
+.entry-num {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted); letter-spacing: 1px;
+}
+.remove-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); font-size: 12px; width: 26px; height: 26px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.remove-btn:hover { border-color: var(--danger); color: var(--danger); background: rgba(255,59,92,0.1); }
+.entry-grid {
+  display: grid; grid-template-columns: 2fr 2.5fr 1fr; gap: 16px; align-items: start;
+}
+.other-row {
+  display: none; margin-top: 14px;
+}
+.other-row.visible { display: block; }
+.other-textarea {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 10px 12px; width: 100%; resize: vertical;
+  outline: none; font-size: 12px; font-family: var(--font-body);
+}
+.other-textarea:focus { border-color: var(--accent); }
+.other-notice {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  color: var(--accent4); margin-bottom: 6px; font-family: var(--font-mono);
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-size: 11px; font-family: var(--font-mono); color: var(--muted);
+  letter-spacing: 0.5px; text-transform: uppercase;
+}
+.req { color: var(--danger); font-weight: bold; }
+input[readonly], select[readonly] {
+  background: rgba(26,45,74,0.3) !important; color: var(--muted) !important; cursor: not-allowed !important;
+}
+
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  z-index: 9999; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.open { display: flex !important; }
+.modal {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  width: 100%; max-width: 640px; padding: 24px; max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.8);
+}
+.summary-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px;
+}
+.summary-card {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; text-align: center;
+}
+.summary-val {
+  font-family: var(--font-mono); font-size: 22px; font-weight: 700; color: var(--accent);
+}
+.summary-lbl {
+  font-size: 9px; color: var(--muted); margin-top: 4px; font-family: var(--font-mono); letter-spacing: 0.5px;
+}
+.csv-preview {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; font-family: var(--font-mono); font-size: 10px; color: var(--text);
+  white-space: pre; overflow-x: auto; max-height: 200px; overflow-y: auto; margin-bottom: 16px;
+}
+.toast {
+  position: fixed; bottom: 20px; right: 20px; background: var(--panel);
+  border: 1px solid var(--accent3); border-radius: 6px; padding: 12px 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; align-items: center; gap: 12px;
+  z-index: 99999; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transform: translateY(100px); opacity: 0; pointer-events: none;
+}
+.toast.show { transform: translateY(0) !important; opacity: 1 !important; }
+.no-entries {
+  text-align: center; padding: 32px; color: var(--muted); font-size: 13px;
+  border: 1px dashed var(--border); border-radius: 8px; margin-bottom: 10px;
+}
+.no-entries-icon { font-size: 28px; margin-bottom: 8px; opacity: 0.4; }
+
+@media(max-width: 700px) {
+  .entry-grid { grid-template-columns: 1fr; gap: 12px; }
+  .summary-grid { grid-template-columns: 1fr 1fr; }
 }
 </style>
 </head>
 <body>
 
+<body>
+
+<!-- LOGIN CONTAINER -->
+<div id="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="logo-icon">TS</div>
+      <div>
+        <div class="login-title">TSDPL PRODUCTION TERMINAL</div>
+        <div class="login-sub">Operational Log & Analytics System</div>
+      </div>
+    </div>
+    <div id="login-clock" style="font-family:var(--font-mono);font-size:11px;color:var(--accent3);margin-bottom:20px;text-align:center;letter-spacing:1px;"></div>
+    <form onsubmit="handleLogin(event)">
+      <div class="field" style="margin-bottom:18px;">
+        <label for="login-id">EMPLOYEE OR ADMIN ID <span class="req">*</span></label>
+        <input type="text" id="login-id" placeholder="e.g. OP-SLIT-01, ADMIN01" autocomplete="off" style="text-align:center;font-size:16px;text-transform:uppercase;letter-spacing:1px;padding:12px;"/>
+        <div class="field-error" id="login-error" style="text-align:center;margin-top:8px;">Invalid ID</div>
+      </div>
+      <button type="submit" class="login-btn">ENTER SYSTEM</button>
+    </form>
+    <div class="login-footer">
+      <div>Authorized Access Only. System logs are audited.</div>
+      <div style="margin-top:6px;color:var(--border)">v1.1.0 (PROD)</div>
+    </div>
+  </div>
+</div>
+
+<!-- OPERATOR CONTAINER -->
+<div id="operator-container" style="display:none;">
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">TS</div>
+      <div>
+        <div class="logo-text">TSDPL KALINGANAGAR</div>
+        <div class="logo-sub">DELAY ENTRY TERMINAL</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div class="header-stat">
+        <div class="header-stat-val" id="op-clock" style="color:var(--text);font-family:var(--font-mono);font-size:13px;">-- IST</div>
+        <div class="header-stat-lbl" style="text-align:right;">OPERATIONAL TIME</div>
+      </div>
+      <div style="border-left:1px solid var(--border);padding-left:16px;display:flex;align-items:center;gap:10px;">
+        <div style="font-size:12px;color:var(--muted)">OPERATOR: <strong id="op-employee-id" style="color:var(--accent)">--</strong></div>
+        <button onclick="handleLogout()" style="background:transparent;border:1px solid var(--border);color:var(--danger);font-family:var(--font-head);font-size:11px;font-weight:600;letter-spacing:1px;padding:4px 10px;border-radius:4px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,59,92,0.1)';this.style.borderColor='var(--danger)'" onmouseout="this.style.background='transparent';this.style.borderColor='var(--border)'">LOGOUT</button>
+      </div>
+    </div>
+  </header>
+  
+  <div class="main" style="max-width:960px;margin:0 auto;padding-top:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;">
+        ⏱ Shift downtime log entry
+      </div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);">
+        * Fields are mandatory
+      </div>
+    </div>
+    
+    <!-- SHIFT INFORMATION CARD -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-title" style="justify-content:space-between;display:flex;width:100%;">
+        <span>01 — SHIFT METADATA</span>
+        <span id="op-line-badge" style="background:rgba(0,200,255,0.15);color:var(--accent);border:1px solid rgba(0,200,255,0.3);font-size:12px;padding:3px 12px;border-radius:20px;letter-spacing:1px;font-family:var(--font-mono);">SLITTER</span>
+      </div>
+      <div class="section-grid g3" style="grid-gap:16px;">
+        <!-- DATE -->
+        <div class="field">
+          <label>Date (Auto-Set)</label>
+          <input type="text" id="op-dateField" readonly disabled style="background:rgba(26,45,74,0.3);color:var(--muted);cursor:not-allowed;font-family:var(--font-mono);font-weight:600;"/>
+        </div>
+        <!-- SHIFT -->
+        <div class="field">
+          <label>Shift (Auto-Set)</label>
+          <input type="text" id="op-shiftField" readonly disabled style="background:rgba(26,45,74,0.3);color:var(--muted);cursor:not-allowed;font-family:var(--font-mono);font-weight:600;"/>
+        </div>
+        <!-- SHIFT INCHARGE -->
+        <div class="field">
+          <label>Shift Incharge <span class="req">*</span></label>
+          <select id="op-inchargeField">
+            <option value="">— Select Incharge —</option>
+            <option>NAGESHWAR REDDY</option>
+            <option>SUNIL PRADHAN</option>
+            <option>JAGANNATH REDDY</option>
+            <option>RAHUL KUMAR</option>
+            <option>RAVI MAHATO</option>
+            <option>DIGANTA SAHOO</option>
+          </select>
+          <div class="field-error" id="op-inchargeError" style="display:none;color:var(--danger);font-size:10px;margin-top:2px;">Select shift incharge.</div>
+        </div>
+      </div>
+      
+      <div class="section-grid g2" style="grid-gap:16px;margin-top:12px;">
+        <!-- TEAM -->
+        <div class="field">
+          <label>Operator Team <span class="req">*</span></label>
+          <select id="op-teamField">
+            <option value="">— Select Operator Team —</option>
+            <option>SUJIT &amp; TEAM</option>
+            <option>IMRAN , PRAVEEN &amp; TEAM</option>
+            <option>NARAYAN , PAPPU &amp; TEAM</option>
+          </select>
+          <div class="field-error" id="op-teamError" style="display:none;color:var(--danger);font-size:10px;margin-top:2px;">Select operator team.</div>
+        </div>
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <!-- TONNAGE -->
+          <div class="field">
+            <label>Coil Tonnage <span class="req">*</span></label>
+            <div style="position:relative;">
+              <input type="number" id="op-tonnageField" placeholder="0.00" min="0" step="0.01" style="padding-right:32px;font-family:var(--font-mono);"/>
+              <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--muted);font-family:var(--font-mono);">MT</span>
+            </div>
+            <div class="field-error" id="op-tonnageError" style="display:none;color:var(--danger);font-size:10px;margin-top:2px;">Enter tonnage (>=0).</div>
+          </div>
+          <!-- COIL COUNT -->
+          <div class="field">
+            <label>No. of Coils <span class="req">*</span></label>
+            <input type="number" id="op-coilField" placeholder="0" min="0" step="1" style="font-family:var(--font-mono);"/>
+            <div class="field-error" id="op-coilError" style="display:none;color:var(--danger);font-size:10px;margin-top:2px;">Enter coils (>=0).</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-grid g2" style="grid-gap:16px;margin-top:12px;">
+        <!-- START TIME -->
+        <div class="field">
+          <label>Shift Start Time</label>
+          <input type="text" id="op-startTime" placeholder="e.g. 06:00" style="font-family:var(--font-mono);"/>
+        </div>
+        <!-- END TIME -->
+        <div class="field">
+          <label>Shift End Time</label>
+          <input type="text" id="op-endTime" placeholder="e.g. 14:00" style="font-family:var(--font-mono);"/>
+        </div>
+      </div>
+    </div>
+    
+    <!-- DELAY DETAILS CARD -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-title" style="justify-content:space-between;display:flex;align-items:center;">
+        <span>02 — DELAY LOG ENTRIES</span>
+        <button type="button" class="filter-btn" style="padding:6px 14px;font-size:13px;display:flex;align-items:center;gap:4px;" onclick="addOperatorDelayEntry()">
+          <span style="font-size:14px;line-height:1;">+</span> Add Delay Entry
+        </button>
+      </div>
+      
+      <div id="entriesContainer" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="no-entries" id="noEntriesMsg">
+          <div class="no-entries-icon">⏱</div>
+          No delay entries yet.<br>Click <strong>+ Add Delay Entry</strong> to begin.
+        </div>
+      </div>
+      
+      <!-- TOTAL TIME BAR -->
+      <div class="total-bar" id="totalBar" style="display:none;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;margin-top:12px;">
+        <div>
+          <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;">TOTAL DELAY TIME</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Downtime recorded for this shift</div>
+        </div>
+        <div style="text-align:right;">
+          <div id="op-totalMinutes" style="font-family:var(--font-head);font-size:22px;font-weight:700;color:var(--accent4);">0 MIN</div>
+          <div id="op-totalHours" style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:2px;">0 hrs 0 min</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- FORM ACTIONS -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding-bottom:60px;">
+      <button type="button" class="filter-btn reset" onclick="confirmOpReset()">↺ RESET FORM</button>
+      <button type="button" class="filter-btn" style="background:var(--accent3);padding:10px 24px;" onclick="submitOperatorForm()">✓ SUBMIT &amp; GENERATE REPORT</button>
+    </div>
+  </div>
+</div>
+
+<div id="admin-container" style="display:none;">
 <!-- HEADER -->
 <div class="header">
   <div class="logo">
@@ -498,7 +801,8 @@ tr:hover td { background: rgba(0,200,255,.03); }
       <div class="header-stat-val" style="color:var(--text);" id="hdr-datetime">-- / SHIFT -</div>
       <div class="header-stat-lbl">CURRENT SYSTEM TIME</div>
     </div>
-    <div class="live-badge"><div class="live-dot"></div>LIVE DATA</div>
+    <div class="live-badge" style="margin-right:12px;"><div class="live-dot"></div>LIVE DATA</div>
+    <button onclick="handleLogout()" style="background:transparent;border:1px solid var(--border);color:var(--danger);font-family:var(--font-head);font-size:11px;font-weight:600;letter-spacing:1px;padding:4px 10px;border-radius:4px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(255,59,92,0.1)';this.style.borderColor='var(--danger)'" onmouseout="this.style.background='transparent';this.style.borderColor='var(--border)'">LOGOUT</button>
   </div>
 </div>
 
@@ -511,6 +815,7 @@ tr:hover td { background: rgba(0,200,255,.03); }
   <div class="tab" data-page="maintenance">MAINTENANCE</div>
   <div class="tab" data-page="availability">AVAILABILITY</div>
   <div class="tab" data-page="ml">ML PREDICTIONS</div>
+  <div class="tab" data-page="operator-logs" style="display:none;">OPERATOR LOGS</div>
 </div>
 
 <!-- FILTERS -->
@@ -953,7 +1258,81 @@ tr:hover td { background: rgba(0,200,255,.03); }
   </div>
 </div>
 
+<!-- ═══════════════ OPERATOR LOGS PAGE ═══════════════ -->
+<div class="page" id="page-operator-logs">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div style="font-family:var(--font-head);font-size:18px;font-weight:700;letter-spacing:1px;color:var(--text);">
+      OPERATOR DOWNTIME SUBMISSION LOGS <span class="badge" id="op-logs-count">0 entries</span>
+    </div>
+    <button class="filter-btn" onclick="downloadAdminLogsCSV()" style="font-size:12px;display:flex;align-items:center;gap:6px;">
+      📥 DOWNLOAD LOGS CSV
+    </button>
+  </div>
+  
+  <div class="card">
+    <div class="tbl-wrap" style="max-height:480px;">
+      <table id="op-logs-table">
+        <thead>
+          <tr>
+            <th>SUBMIT TIME</th>
+            <th>OPERATOR</th>
+            <th>LINE</th>
+            <th>DATE</th>
+            <th>SHIFT</th>
+            <th>INCHARGE</th>
+            <th>TEAM</th>
+            <th>TONNAGE (MT)</th>
+            <th>COILS</th>
+            <th>DELAY TIME</th>
+            <th>DELAY DETAILS</th>
+          </tr>
+        </thead>
+        <tbody id="op-logs-tbody">
+          <tr>
+            <td colspan="11" style="text-align:center;color:var(--muted);padding:30px;">
+              Loading logs...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 </div><!-- /main -->
+</div><!-- /admin-container -->
+
+<!-- OPERATOR EXPORT MODAL -->
+<div class="modal-overlay" id="op-exportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center;padding:20px;">
+  <div class="modal" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;width:100%;max-width:640px;padding:20px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,0.8);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px;">
+      <div style="font-family:var(--font-head);font-size:16px;font-weight:700;color:var(--accent3);letter-spacing:1px;">⬇ SHIFT REPORT EXPORT</div>
+      <button class="remove-btn" onclick="closeOpModal()" style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    
+    <div class="summary-grid" id="op-summaryGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+      <!-- Dynamic Summary -->
+    </div>
+    
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;">CSV DATA PREVIEW</div>
+    <div class="csv-preview" id="op-csvPreview" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-family:var(--font-mono);font-size:10px;color:var(--text);white-space:pre;overflow-x:auto;max-height:200px;overflow-y:auto;margin-bottom:16px;"></div>
+    
+    <div style="display:flex;gap:12px;justify-content:flex-end;">
+      <button class="filter-btn reset" onclick="closeOpModal()">CLOSE</button>
+      <button class="filter-btn" id="op-copyBtn" onclick="copyOpToClipboard()" style="background:transparent;color:var(--accent);border:1px solid var(--accent);">⎘ COPY TO CLIPBOARD</button>
+      <button class="filter-btn" onclick="downloadOpCSV()">⬇ DOWNLOAD CSV</button>
+    </div>
+  </div>
+</div>
+
+<!-- OPERATOR TOAST -->
+<div class="toast" id="op-toast" style="position:fixed;bottom:20px;right:20px;background:var(--panel);border:1px solid var(--accent3);border-radius:6px;padding:12px 18px;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;align-items:center;gap:12px;z-index:99999;transition:all 0.4s ease;transform:translateY(100px);opacity:0;pointer-events:none;">
+  <span style="font-size:20px;line-height:1;">✅</span>
+  <div>
+    <div id="op-toast-title" style="font-family:var(--font-head);font-weight:700;font-size:13px;color:var(--accent3);">Success</div>
+    <div id="op-toast-sub" style="font-size:11px;color:var(--muted);margin-top:2px;">Action completed.</div>
+  </div>
+</div>
 
 <script>
 function uploadDragOver(e,el){e.preventDefault();el.classList.add('drag-over');}
@@ -1020,6 +1399,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <script src="js/rul_client.js"></script>
 <script src="js/analytics.js?v=1.0.3"></script>
 <script src="js/parser.js?v=1.0.3"></script>
+<script src="js/delay_entry.js?v=1.1.0"></script>
 <script src="js/app.js?v=1.0.3"></script>
 </body>
 </html>

@@ -1,0 +1,5 @@
+# Local runtime directories
+uploaded_data/
+__pycache__/
+*.pyc
+.vscode/

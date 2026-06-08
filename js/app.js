@@ -34,6 +34,11 @@ function setupNav(){
       document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
       t.classList.add('active');
       document.getElementById('page-'+t.dataset.page).classList.add('active');
+      if (t.dataset.page === 'operator-logs') {
+        if (typeof loadAdminLogs === 'function') {
+          loadAdminLogs();
+        }
+      }
       renderPage(t.dataset.page);
     });
   });
@@ -176,7 +181,89 @@ async function runAnomalyDetection(shiftRecords) {
   }
 }
 
-window.addEventListener('DOMContentLoaded',()=>{
+async function loadSharedBackendData() {
+  // 1. Fetch excel data from backend
+  try {
+    const res = await fetch('http://127.0.0.1:8000/api/get-data');
+    if (res.ok) {
+      const serverShifts = await res.json();
+      if (Array.isArray(serverShifts) && serverShifts.length > 0) {
+        window.RAW_DATA = serverShifts;
+        console.log(`Loaded ${serverShifts.length} shifts from FastAPI backend.`);
+        updateUCNCards(serverShifts);
+      }
+    }
+  } catch(e) {
+    console.warn("FastAPI backend offline or unreachable. Using offline mode.", e);
+  }
+
+  // 2. Load operator logs from backend or localStorage, and merge them
+  let operatorLogs = [];
+  try {
+    const res = await fetch('http://127.0.0.1:8000/api/operator-logs');
+    if (res.ok) {
+      operatorLogs = await res.json();
+    }
+  } catch(e) {
+    console.warn("Backend offline. Loading operator logs from localStorage.");
+    operatorLogs = JSON.parse(localStorage.getItem('tsdpl_operator_logs') || '[]');
+  }
+
+  if (Array.isArray(operatorLogs) && operatorLogs.length > 0) {
+    operatorLogs.forEach(log => {
+      const shiftObj = {
+        date: log.date,
+        shift: log.shift,
+        incharge: log.incharge,
+        team: log.team,
+        machine: log.machine,
+        tonnage: log.tonnage,
+        coils: log.coils,
+        delays: log.delays.map(d => ({
+          time: d.time,
+          type: d.type,
+          description: d.description,
+          reason: d.reason
+        }))
+      };
+
+      // Avoid duplicates
+      window.RAW_DATA = window.RAW_DATA.filter(r =>
+        !(r.date === shiftObj.date && r.shift === shiftObj.shift && r.machine === shiftObj.machine && r.incharge === shiftObj.incharge && r.team === shiftObj.team)
+      );
+      window.RAW_DATA.push(shiftObj);
+    });
+  }
+}
+
+function updateUCNCards(shifts) {
+  const machines = ["SLITTER", "WCTL-1", "WCTL-2"];
+  machines.forEach(machine => {
+    const count = shifts.filter(s => s.machine === machine).length;
+    const channelId = `ch-${machine.toLowerCase().replace(/-/g, '')}`;
+    const channelDiv = document.getElementById(channelId);
+    if (channelDiv && count > 0) {
+      channelDiv.classList.add('loaded');
+      const countSpan = document.getElementById(`cnt-${machine.toLowerCase().replace(/-/g,'')}`);
+      if (countSpan) countSpan.textContent = count;
+    }
+  });
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  // Check session first
+  if (typeof checkSession === 'function') {
+    checkSession();
+  }
+  
+  // Initialize operator clock
+  if (typeof initOperatorClock === 'function') {
+    initOperatorClock();
+  }
+
+  // Load backend data
+  await loadSharedBackendData();
+
   populateFilters();
   applyFilters();
   setupNav();
