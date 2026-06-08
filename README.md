@@ -9,12 +9,13 @@ Welcome to the **TSDPL Machine Delay Breakdown & Anomaly Detection System**! Thi
 Imagine you are running a factory with **three big machines** that process steel coils: **WCTL-1**, **WCTL-2**, and a **SLITTER**. 
 
 Sometimes, these machines stop working (called **delays** or **breakdowns**). When they stop, the factory loses money. 
-This project does three main things:
+This project does four main things:
 1. **Reads Excel logs** that operators type in during their work shifts.
 2. **Shows beautiful charts and summaries** (KPIs) of production, availability, and delays.
 3. **Uses Machine Learning (AI brains)** to:
    - **Predict when a machine is going to break down next** (Remaining Useful Life, or **RUL**).
    - **Flag weird work shifts** that had unusual levels of downtime or low production (called **Anomaly Detection**).
+4. **Allows Operators to log shift downtime directly** via a secure, automatic terminal that locks to their machine line and syncs inputs to a shared backend in real-time.
 
 ---
 
@@ -62,6 +63,7 @@ TSDPL_DELAY2/
 ├── TSDPL_Dashboard.html                 # The main web page you see in your browser.
 ├── README.md                            # THIS FILE - The ultimate simple manual.
 ├── commit-and-push.bat                  # A shortcut script to save and backup changes to Git.
+├── .gitignore                           # Excludes local runtime folders and Python caches.
 │
 ├── css/
 │   └── style.css                        # The style guide (colors, layouts, and dark-theme looks).
@@ -73,10 +75,11 @@ TSDPL_DELAY2/
 │   ├── filters.js                       # The cleaner that normalizes names, dates, and delays.
 │   ├── charts.js                        # The artist that builds Chart.js graphs.
 │   ├── analytics.js                     # The mathematician that calculates KPIs and draws pages.
-│   └── rul_client.js                    # The messenger that requests RUL predictions from Python.
+│   ├── rul_client.js                    # The messenger that requests RUL predictions from Python.
+│   └── delay_entry.js                   # Handles operator logs entry, validation, and login.
 │
 ├── rul_tsdpl/                           # RUL Prediction Brain (Python Backend)
-│   ├── api.py                           # The web server that hosts the RUL and Anomaly APIs.
+│   ├── api.py                           # The web server that hosts the RUL, Anomaly, and Persistence APIs.
 │   ├── feature_engineering.py           # Prepares historical Excel data into training features.
 │   ├── train.py                         # Trains the Gradient Boosting ML model.
 │   ├── rul_features.csv                 # The training table generated from Excel history.
@@ -91,10 +94,17 @@ TSDPL_DELAY2/
 │   ├── test_anomaly_detector.py         # Test script to make sure the anomaly brain works correctly.
 │   └── models/                          # Folder where the saved anomaly AI brain is stored.
 │
+├── uploaded_data/                       # Local backend storage for parsed shifts and operator logs (Git ignored)
+│   ├── SLITTER.json                     # Saved parsed JSON data for Slitter
+│   ├── WCTL-1.json                      # Saved parsed JSON data for WCTL-1
+│   ├── WCTL-2.json                      # Saved parsed JSON data for WCTL-2
+│   └── operator_logs.json               # Persistent logs of operator downtime submissions
+│
 └── sampledata/                          # Actual plant Excel delay sheets for testing
     ├── WCTL-1 DELAY REPORT MAY-26.xlsx  # Shift logs for WCTL-1
     ├── WCTL-2 DELAY FEB-2026.xlsx       # Shift logs for WCTL-2
-    └── SLITDELAY REPOERT MAR-2026.xlsx  # Shift logs for SLITTER
+    ├── SLITDELAY REPOERT MAR-2026.xlsx  # Shift logs for SLITTER
+    └── extracted_delay_mappings.json    # JSON mapping of delay categories/subcauses
 ```
 
 ---
@@ -188,11 +198,21 @@ Let's look inside every single file and explain exactly what every function (cod
   - `renderRULCard(prediction, containerId)`: Draws a RUL card with risk colors (Green, Amber, Red), the predicted days left, confidence level, advice, and key contributing features.
   - `renderRULPredictions()`: Filters active machines (only machines with uploaded data), shows a loading spinner, requests predictions, and hides empty cards.
 
+#### 10. [js/delay_entry.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/delay_entry.js)
+- **What it does:** Logic controller for the Operator Delay Entry Terminal, managing form creation, login gating, dynamic dropdown loading, alphanumeric validation, and log persistence.
+- **Code-Blocks:**
+  - `getISTDateTime()`: Calculates the current Date and Shift (Shift A: 06:00-14:00, Shift B: 14:00-22:00, Shift C: 22:00-06:00 IST) based on the system clock.
+  - `handleLogin(event)`: Validates credentials and gates dashboard view by user role (Operator or Admin).
+  - `setupOperatorForm(line)`: Pre-fills and locks the machine line selection and auto-sets the read-only Date and Shift.
+  - `addOperatorDelayEntry()`: Appends a new delay log entry row with cascading selects dynamically loaded from Sheet 3 reference data for the operator's line.
+  - `submitOperatorForm()`: Validates inputs (non-negative tonnage/coils, positive minutes, alphanumeric-only description for "OTHER" reasons), posts to backend `/api/operator-log`, saves locally, and opens the Export modal.
+  - `loadAdminLogs()`: Fetches operator entries from the backend server to draw a unified audit table.
+
 ---
 
 ### 🔮 Python Machine Learning Backend (rul_tsdpl/ & anomaly_detector/)
 
-#### 10. [rul_tsdpl/feature_engineering.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/feature_engineering.py)
+#### 11. [rul_tsdpl/feature_engineering.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/feature_engineering.py)
 - **What it does:** Python script used to aggregate raw Excel files from the plant and transform them into a clean tabular training dataset (`rul_features.csv`).
 - **Code-Blocks:**
   - `load_raw(filepath)`: Loads a single Excel sheet, normalizes column names, forward-fills empty shift rows, parses dates, and calculates availability.
@@ -201,17 +221,21 @@ Let's look inside every single file and explain exactly what every function (cod
   - `build_features(df, bd_events)`: Looks at historical records *before* each breakdown event to extract rolling window metrics (like average tonnage, MTBF, MTTR).
   - `build_full_dataset(data_dir)`: Runs the extraction pipeline across WCTL-1, WCTL-2, and SLITTER, returning a merged feature matrix.
 
-#### 11. [rul_tsdpl/train.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/train.py)
+#### 12. [rul_tsdpl/train.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/train.py)
 - **What it does:** Trains the RUL regression model using scikit-learn.
 - **Code-Blocks:**
   - `train(df)`: Takes the engineered features, splits the data, performs 5-fold cross-validation, trains a **Gradient Boosting Regressor** with Huber loss, outputs accuracy metrics (MAE, R²), prints feature importances, and saves the model.
 
-#### 12. [rul_tsdpl/api.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/api.py)
-- **What it does:** The FastAPI web server. It handles incoming requests from the frontend, feeds them to the trained models, and returns JSON predictions.
+#### 13. [rul_tsdpl/api.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/api.py)
+- **What it does:** The FastAPI web server. It handles predictions (RUL and Anomaly Detection) and acts as the shared persistence data store for uploaded spreadsheets and operator log submissions.
 - **Code-Blocks:**
   - `health()`: `GET /health` endpoint to check if the server is running.
   - `model_info()`: `GET /model-info` endpoint that returns feature importances and training statistics.
   - `predict(req)`: `POST /predict` endpoint. It receives the client-side payload, runs the RUL model (`MODEL.predict()`), calculates the risk band, builds the warning text, and computes feature contributions.
+  - `upload_data(machine, data)`: `POST /api/upload-data` endpoint. Saves parsed JSON shifts for WCTL-1, WCTL-2, or SLITTER to the server's disk.
+  - `get_data()`: `GET /api/get-data` endpoint. Combines and returns all shifts from the stored JSON files so that all clients share the same view.
+  - `operator_log(log_entry)`: `POST /api/operator-log` endpoint. Appends a new operator delay entry log to a central `operator_logs.json` file.
+  - `get_operator_logs()`: `GET /api/operator-logs` endpoint. Loads operator logs for admin review and charts integration.
   - `compute_risk_band(rul, mtbf)`: Assigns a Green/Amber/Red status depending on how close the machine is to its average failure interval.
   - `build_advice(rul, band, req)`: Generates a human-friendly warning message (e.g., "Schedule immediate inspection. MTTR is 45 min; prepare spare parts...").
   - `top_feature_contributions(feature_vector)`: Determines which 3 features influenced the prediction the most.
@@ -358,6 +382,45 @@ When the browser requests predictions, it calls these API endpoints on port `800
   }
   ```
 
+### Shared Spreadsheet Storage: `POST /api/upload-data`
+- **Query Params:** `machine=SLITTER` (or `WCTL-1`, `WCTL-2`)
+- **Request Body (JSON):** Array of shift logs parsed by the frontend.
+- **Response:** `{"status": "ok", "message": "Data for SLITTER saved successfully"}`
+
+### Shared Spreadsheet Retrieval: `GET /api/get-data`
+- **Response:** Merged array of all shifts stored on the server's disk.
+
+### Operator Delay Entry: `POST /api/operator-log`
+- **Request Body (JSON):**
+  ```json
+  {
+    "timestamp": "2026-06-08T23:50:00Z",
+    "employeeId": "OP-SLIT-01",
+    "machine": "SLITTER",
+    "date": "08.06.2026",
+    "shift": "A",
+    "incharge": "SUNIL PRADHAN",
+    "team": "SUJIT & TEAM",
+    "tonnage": 300.5,
+    "coils": 10,
+    "startTime": "06:00",
+    "endTime": "14:00",
+    "totalDelayMin": 15,
+    "delays": [
+      {
+        "time": 15,
+        "type": "SETUP DELAY",
+        "description": "FELT PAD CHANGE",
+        "reason": "FELT PAD CHANGE"
+      }
+    ]
+  }
+  ```
+- **Response:** `{"status": "ok", "message": "Operator log saved successfully"}`
+
+### Operator Logs Retrieval: `GET /api/operator-logs`
+- **Response:** Array of all operator logs submitted to date.
+
 ---
 
 ## 🚀 7. Running Guide (Step-by-Step)
@@ -478,5 +541,36 @@ You can deep-dive into specific categories of downtime using these filters:
 * **Sort Dropdown**: Sort delays by Date, Duration (Highest First/Lowest First), or alphabetically by Delay Type.
 * **↺ RESET Button**: Resets all filters (including the multi-select category chips back to 'ALL') and clears search inputs.
 * **Dynamic Record Counter**: Displays matching count up to 500 records (e.g., `185 of 450 events`) to prevent browser table rendering bottlenecks.
+
+
+---
+
+## 🔐 11. Secure Login & Operator Logs Auditing
+
+To ensure strict process control in a live plant, the application implements a role-based security gate at startup:
+
+### 1. Predefined Logins
+The system checks entered credentials against a secure list:
+* **Operator IDs (Pre-assigned to Lines)**:
+  * `OP-SLIT-01` (SLITTER Operator)
+  * `OP-W1-01` (WCTL-1 Operator)
+  * `OP-W2-01` (WCTL-2 Operator)
+* **Admin IDs**:
+  * `ADMIN01`, `ADMIN02`, `ADMIN03`, `ADMIN04`
+
+### 2. Operator Interface Controls
+When an operator logs in:
+* They are navigated to the **Delay Entry Terminal** and restricted from accessing the main admin charts.
+* The **Production Line** selection is automatically locked to their machine (e.g., `SLITTER`).
+* The **Date** and **Shift** are automatically computed in real-time using Indian Standard Time (IST) shift bounds (Shift A: 6am-2pm, Shift B: 2pm-10pm, Shift C: 10pm-6am) and made read-only.
+* They enter mandatory shift stats (Incharge, Team, Tonnage, Coils, Start/End times) and downtime delay rows.
+
+### 3. Admin Auditing Controls
+When an admin logs in:
+* They are navigated to the **Production Analytics Dashboard** with full access to files upload, trends, and ML cards.
+* They gain access to a new **OPERATOR LOGS** tab.
+* This tab queries `GET /api/operator-logs` to show a searchable table of all submissions, indicating who inputted what, when (server timestamp), tonnage, and individual downtime details.
+* Admins can download the compiled log database as a CSV for reporting.
+* All operator entries automatically merge into `window.RAW_DATA` on page load, dynamically feeding the Overview, Delay Analysis, and Pareto graphs.
 
 
