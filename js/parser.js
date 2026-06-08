@@ -25,34 +25,80 @@ async function handleUpload(event, machine) {
   try {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: 'array' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-    // Remove completely empty rows
-    const nonEmptyRows = (rows || []).filter(r =>
-      Array.isArray(r) && r.some(cell =>
-        cell !== undefined && cell !== null && String(cell).trim() !== ''
-      )
-    );
-    if (!nonEmptyRows || nonEmptyRows.length < 1) throw new Error('File has no data rows');
-
+    
     const normalize = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
-    // Locate header row within the first 10 non-empty rows
+    let targetSheetName = workbook.SheetNames[0];
+    let nonEmptyRows = [];
     let headerRowIndex = -1;
     let detectedHeaders = [];
-    for (let i = 0; i < Math.min(10, nonEmptyRows.length); i++) {
-      const r = nonEmptyRows[i];
-      const norm = r.map(cell => normalize(cell));
-      const hasDate  = norm.some(c => c.includes('DATE'));
-      const hasShift = norm.some(c => c === 'SHIFT' || c.includes('SHIFT'));
-      if (hasDate && hasShift) {
-        headerRowIndex = i;
-        detectedHeaders = norm;
-        break;
+
+    // ── SMART SHEET DETECTION ───────────────────────────────────────
+    // Some uploaded Excel files have Pivot Tables as their first sheet.
+    // We scan all sheets to find the one containing raw data (identified
+    // by having 'DATE' and 'SHIFT' in the first 10 rows).
+    for (const name of workbook.SheetNames) {
+      const sheet = workbook.Sheets[name];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const currentNonEmpty = (rows || []).filter(r =>
+        Array.isArray(r) && r.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '')
+      );
+      
+      let foundHeaderIdx = -1;
+      let foundHeaders = [];
+      for (let i = 0; i < Math.min(10, currentNonEmpty.length); i++) {
+        const norm = currentNonEmpty[i].map(cell => normalize(cell));
+        const hasDate  = norm.some(c => c.includes('DATE'));
+        const hasShift = norm.some(c => c === 'SHIFT' || c.includes('SHIFT'));
+        if (hasDate && hasShift) {
+          foundHeaderIdx = i;
+          foundHeaders = norm;
+          break;
+        }
+      }
+
+      if (foundHeaderIdx !== -1) {
+        targetSheetName = name;
+        nonEmptyRows = currentNonEmpty;
+        headerRowIndex = foundHeaderIdx;
+        detectedHeaders = foundHeaders;
+        break; // Found the correct data sheet!
       }
     }
+
+    // If no perfect match found, fallback to the first sheet that doesn't look like a Pivot Table
+    if (headerRowIndex === -1) {
+      console.warn('⚠️ Could not find a sheet with clear DATE/SHIFT headers. Attempting fallback.');
+      for (const name of workbook.SheetNames) {
+        const sheet = workbook.Sheets[name];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        const currentNonEmpty = (rows || []).filter(r =>
+          Array.isArray(r) && r.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '')
+        );
+        
+        // Avoid Pivot tables (often start with "Row Labels")
+        const firstCell = currentNonEmpty.length > 0 ? normalize(currentNonEmpty[0][0]) : '';
+        if (firstCell !== 'ROW LABELS' && currentNonEmpty.length > 0) {
+          targetSheetName = name;
+          nonEmptyRows = currentNonEmpty;
+          break;
+        }
+      }
+      
+      // Ultimate fallback: just use the first sheet if everything else failed
+      if (nonEmptyRows.length === 0) {
+        targetSheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[targetSheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        nonEmptyRows = (rows || []).filter(r =>
+          Array.isArray(r) && r.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '')
+        );
+      }
+    }
+
+    if (!nonEmptyRows || nonEmptyRows.length < 1) throw new Error('File has no data rows in any valid sheet');
+    
+    console.log(`✅ Selected sheet for parsing: "${targetSheetName}"`);
 
     let colIndex = {};
     let dataStartRow = 0;
