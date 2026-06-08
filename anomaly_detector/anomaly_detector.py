@@ -145,12 +145,21 @@ class ShiftAnomalyDetector:
             "score_std":       float(np.std(scores)),
         }
 
+    # Paths for training distribution (used by driver explanation)
+    MEDIAN_PATH = _MODULE_DIR / "models" / "training_median.joblib"
+    IQR_PATH    = _MODULE_DIR / "models" / "training_iqr.joblib"
+
     def save(self):
         """Persist fitted artefacts to disk (for FastAPI reload)."""
         self.MODEL_PATH.parent.mkdir(exist_ok=True)
         joblib.dump(self.model,        self.MODEL_PATH)
         joblib.dump(self.scaler,       self.SCALER_PATH)
         joblib.dump(self.feature_cols, self.META_PATH)
+        # Persist training distribution for driver explanation after reload
+        if self._training_median is not None:
+            joblib.dump(self._training_median, self.MEDIAN_PATH)
+        if self._training_iqr is not None:
+            joblib.dump(self._training_iqr,    self.IQR_PATH)
 
     @classmethod
     def load(cls) -> "ShiftAnomalyDetector":
@@ -160,9 +169,14 @@ class ShiftAnomalyDetector:
         instance.scaler       = joblib.load(cls.SCALER_PATH)
         instance.feature_cols = joblib.load(cls.META_PATH)
         instance.is_fitted    = True
-        # Rebuild median/iqr approximation (not saved, but only used for explain)
-        instance._training_median = None
-        instance._training_iqr    = None
+        instance.contamination = instance.model.contamination
+        # Restore training distribution for driver explanation
+        instance._training_median = (
+            joblib.load(cls.MEDIAN_PATH) if cls.MEDIAN_PATH.exists() else None
+        )
+        instance._training_iqr = (
+            joblib.load(cls.IQR_PATH) if cls.IQR_PATH.exists() else None
+        )
         return instance
 
     # ── private helpers ───────────────────────────────────────────────────────

@@ -78,13 +78,17 @@ TSDPL_DELAY2/
 │   ├── rul_client.js                    # The messenger that requests RUL predictions from Python.
 │   └── delay_entry.js                   # Handles operator logs entry, validation, and login.
 │
-├── rul_tsdpl/                           # RUL Prediction Brain (Python Backend)
+├── rul_tsdpl/                           # RUL Prediction Brain (Python Backend) — v2 Dual Model
 │   ├── api.py                           # The web server that hosts the RUL, Anomaly, and Persistence APIs.
-│   ├── feature_engineering.py           # Prepares historical Excel data into training features.
-│   ├── train.py                         # Trains the Gradient Boosting ML model.
-│   ├── rul_features.csv                 # The training table generated from Excel history.
-│   ├── rul_model.pkl                    # The saved RUL AI brain.
-│   └── rul_model_meta.json              # A summary of how smart the RUL model is.
+│   ├── feature_engineering.py           # v2: Shift-level features (19 total) with risk classification.
+│   ├── train.py                         # v2: Trains dual models — Classifier (SMOTE) + Regressor (log-transform).
+│   ├── rul_classifier_v2.pkl            # The saved Risk Classifier brain (GradientBoostingClassifier).
+│   ├── rul_regressor_v2.pkl             # The saved RUL Regressor brain (GradientBoostingRegressor, log-space).
+│   ├── rul_model_meta_v2.json           # v2 metadata: classification report, confusion matrix, importances.
+│   ├── rul_features_v2.csv              # v2 training table: shift-level features with risk_class column.
+│   ├── rul_features.csv                 # Legacy v1 training table (backward compat).
+│   ├── rul_model.pkl                    # Legacy v1 model (backward compat, auto-updated by train.py).
+│   └── rul_model_meta.json              # Legacy v1 metadata (backward compat, auto-updated by train.py).
 │
 ├── anomaly_detector/                    # Shift Anomaly Brain (Python Backend)
 │   ├── requirements.txt                 # List of Python packages needed for anomalies.
@@ -191,11 +195,11 @@ Let's look inside every single file and explain exactly what every function (cod
   - `renderML()`: Renders the ML PREDICTIONS page. Runs the client-side breakdown interval predictor (EWA) and draws rolling breakdown trends.
 
 #### 9. [js/rul_client.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/rul_client.js)
-- **What it does:** Gathers client data, formats it into a JSON packet, calls the Python API, and draws the Remaining Useful Life (RUL) prediction cards.
+- **What it does:** Gathers client data, formats it into a JSON packet, calls the Python API, and draws the Remaining Useful Life (RUL) prediction cards. **v2** adds 6 new features and renders classifier risk classes with probability bars.
 - **Code-Blocks:**
-  - `buildRULPayload(machine, records)`: Computes 12 numerical features (like 7-day average availability, 30-day delay diversity, MTBF, MTTR, days since last failure) to feed the machine learning model.
+  - `buildRULPayload(machine, records)`: Computes **18 numerical features** (12 original + 6 new v2: `breakdown_streak`, `delay_acceleration`, `availability_trend`, `tonnage_efficiency`, `time_since_maintenance`, `breakdown_severity_avg`). Also uses expanded breakdown keywords including FAILURE, REPAIR, FAULT, TRIP.
   - `fetchRULPrediction(payload)`: Performs a `POST` request to `http://localhost:8000/predict` with the calculated features.
-  - `renderRULCard(prediction, containerId)`: Draws a RUL card with risk colors (Green, Amber, Red), the predicted days left, confidence level, advice, and key contributing features.
+  - `renderRULCard(prediction, containerId)`: **v2**: Draws a RUL card with risk class badges (IMMINENT/SOON), probability distribution bars for each class, feature contribution bars, model version badge, and risk score indicator.
   - `renderRULPredictions()`: Filters active machines (only machines with uploaded data), shows a loading spinner, requests predictions, and hides empty cards.
 
 #### 10. [js/delay_entry.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/delay_entry.js)
@@ -213,32 +217,51 @@ Let's look inside every single file and explain exactly what every function (cod
 ### 🔮 Python Machine Learning Backend (rul_tsdpl/ & anomaly_detector/)
 
 #### 11. [rul_tsdpl/feature_engineering.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/feature_engineering.py)
-- **What it does:** Python script used to aggregate raw Excel files from the plant and transform them into a clean tabular training dataset (`rul_features.csv`).
+- **What it does:** **v2 Overhaul** — Computes features at **shift level** (every shift gets a RUL prediction, not just breakdown events). Produces `rul_features_v2.csv` with **19 features** and a `risk_class` column for classification.
+- **Key v2 Changes:**
+  - **Shift-level targets**: Every shift gets `rul_days` = days until next breakdown from that shift's date (1203 samples vs old 402).
+  - **Expanded breakdown keywords**: Added FAILURE, REPAIR, FAULT, TRIP to the detection list.
+  - **6 new features**: `breakdown_streak` (consecutive breakdown days), `delay_acceleration` (7d/30d delay ratio), `availability_trend` (slope over 7 days), `tonnage_efficiency` (vs historical mean), `time_since_maintenance` (days since last planned stop), `breakdown_severity_avg` (avg breakdown duration in 30d).
+  - **Risk classification**: Adds `risk_class` column — IMMINENT (<=1 day), SOON (1-3 days), SAFE (>3 days).
 - **Code-Blocks:**
   - `load_raw(filepath)`: Loads a single Excel sheet, normalizes column names, forward-fills empty shift rows, parses dates, and calculates availability.
-  - `is_breakdown(row)`: Returns `True` if a row represents an unplanned mechanical or electrical breakdown.
-  - `extract_breakdown_events(df, machine)`: Calculates the target variable `days_to_next_failure` (how many days elapsed between this breakdown and the next one).
-  - `build_features(df, bd_events)`: Looks at historical records *before* each breakdown event to extract rolling window metrics (like average tonnage, MTBF, MTTR).
-  - `build_full_dataset(data_dir)`: Runs the extraction pipeline across WCTL-1, WCTL-2, and SLITTER, returning a merged feature matrix.
+  - `is_breakdown(row)`: Returns `True` if a row represents an unplanned failure (expanded keyword matching).
+  - `_aggregate_shifts(df, machine)`: Aggregates raw delay rows into one row per shift-date with total delay, tonnage, breakdown flags.
+  - `_compute_shift_rul(shifts, bd_dates)`: For each shift, finds the next breakdown date and computes days-to-failure.
+  - `build_features(shifts, all_shifts_raw)`: Computes all 19 features from historical windows before each shift.
+  - `add_risk_class(df)`: Labels shifts as IMMINENT/SOON/SAFE based on RUL threshold.
+  - `build_full_dataset(data_dir)`: Runs the pipeline across all three machine lines.
 
 #### 12. [rul_tsdpl/train.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/train.py)
-- **What it does:** Trains the RUL regression model using scikit-learn.
+- **What it does:** **v2 Dual-Model Training** — Trains two models with proper evaluation and class imbalance handling.
+- **v2 Architecture:**
+  - **Classifier (primary)**: `GradientBoostingClassifier` with **SMOTE** oversampling to balance IMMINENT (94%) vs SOON (6%). Achieves **F1-macro: 0.929, Accuracy: 98%** on held-out test set.
+  - **Regressor (secondary)**: `GradientBoostingRegressor` with log-transformed target (`log1p(rul_days)`) and inverse-frequency sample weighting.
+  - **Proper evaluation**: Stratified 80/20 train/test split, 5-fold stratified CV, classification report with confusion matrix.
+  - **Feature importances are now non-zero!** Top: `machine_id` (0.30), `avg_avail_7d` (0.10), `days_since_last_bd` (0.07).
 - **Code-Blocks:**
-  - `train(df)`: Takes the engineered features, splits the data, performs 5-fold cross-validation, trains a **Gradient Boosting Regressor** with Huber loss, outputs accuracy metrics (MAE, R²), prints feature importances, and saves the model.
+  - `train(df)`: Orchestrates the full pipeline — encodes labels, splits data, trains both models, saves artifacts.
+  - `train_classifier(X_train, y_train, X_test, y_test, le)`: SMOTE resampling + GBC training + CV + test evaluation.
+  - `train_regressor(X_train, y_train, X_test, y_test)`: Log-transform + weighted GBR training + CV + test evaluation.
+  - `compute_sample_weights(y)`: Inverse-frequency weighting so rare high-RUL samples get more attention.
 
 #### 13. [rul_tsdpl/api.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/rul_tsdpl/api.py)
-- **What it does:** The FastAPI web server. It handles predictions (RUL and Anomaly Detection) and acts as the shared persistence data store for uploaded spreadsheets and operator log submissions.
+- **What it does:** The FastAPI web server. **v2** loads both the classifier and regressor, returning risk classifications alongside RUL estimates. Falls back gracefully to legacy v1 model if v2 files aren't present.
+- **v2 Changes:**
+  - Response now includes `risk_class` (IMMINENT/SOON), `risk_probability` (per-class probabilities), and `model_version`.
+  - Request accepts 6 new optional features with backward-compatible defaults.
+  - Confidence is now based on classifier probability margin (not just training row count).
 - **Code-Blocks:**
-  - `health()`: `GET /health` endpoint to check if the server is running.
-  - `model_info()`: `GET /model-info` endpoint that returns feature importances and training statistics.
-  - `predict(req)`: `POST /predict` endpoint. It receives the client-side payload, runs the RUL model (`MODEL.predict()`), calculates the risk band, builds the warning text, and computes feature contributions.
-  - `upload_data(machine, data)`: `POST /api/upload-data` endpoint. Saves parsed JSON shifts for WCTL-1, WCTL-2, or SLITTER to the server's disk.
-  - `get_data()`: `GET /api/get-data` endpoint. Combines and returns all shifts from the stored JSON files so that all clients share the same view.
-  - `operator_log(log_entry)`: `POST /api/operator-log` endpoint. Appends a new operator delay entry log to a central `operator_logs.json` file.
-  - `get_operator_logs()`: `GET /api/operator-logs` endpoint. Loads operator logs for admin review and charts integration.
-  - `compute_risk_band(rul, mtbf)`: Assigns a Green/Amber/Red status depending on how close the machine is to its average failure interval.
-  - `build_advice(rul, band, req)`: Generates a human-friendly warning message (e.g., "Schedule immediate inspection. MTTR is 45 min; prepare spare parts...").
-  - `top_feature_contributions(feature_vector)`: Determines which 3 features influenced the prediction the most.
+  - `health()`: `GET /health` endpoint — now shows model version and whether v2 dual models are active.
+  - `model_info()`: `GET /model-info` endpoint that returns v2 classification report, confusion matrix, and feature importances.
+  - `predict(req)`: `POST /predict` endpoint. Runs both classifier (risk class) and regressor (RUL days), merges results into a unified response.
+  - `upload_data(machine, data)`: `POST /api/upload-data` endpoint. Saves parsed JSON shifts.
+  - `get_data()`: `GET /api/get-data` endpoint. Returns all stored shifts.
+  - `operator_log(log_entry)`: `POST /api/operator-log` endpoint. Appends operator delay entries.
+  - `get_operator_logs()`: `GET /api/operator-logs` endpoint. Loads operator logs for admin review.
+  - `risk_class_to_band(risk_class)`: Maps classifier output (IMMINENT/SOON) to dashboard risk band (RED/AMBER/GREEN).
+  - `build_advice(rul, band, risk_class, req)`: Generates human-friendly warning messages including risk class and breakdown streak info.
+  - `top_feature_contributions(feature_vector, model)`: Returns top-5 features driving the prediction (now non-zero!).
 
 #### 13. [anomaly_detector/feature_engineering.py](file:///c:/TSDPL/week5/TSDPL_DELAY2/anomaly_detector/feature_engineering.py)
 - **What it does:** Converts raw shift rows into 27 engineered features for anomaly detection.
@@ -307,39 +330,36 @@ $$\text{Risk Score} = \min\left(100, \frac{\text{Days since last breakdown}}{\te
 
 When the browser requests predictions, it calls these API endpoints on port `8000`:
 
-### RUL Predictor: `POST /predict`
+### RUL Predictor: `POST /predict` (v2 Dual Model)
 - **Request Body (JSON):**
   ```json
   {
     "machine": "WCTL-1",
-    "mtbf_days": 2.6,
-    "mtbf_std": 8.22,
-    "mtbf_trend": -0.5,
-    "mttr_min": 25.9,
-    "days_since_last_bd": 2.1,
-    "bd_freq_30d": 11,
-    "avg_avail_7d": 88.5,
-    "avg_avail_30d": 90.1,
-    "avg_tonnage_7d": 232.0,
-    "delay_min_7d": 865.0,
-    "delay_min_30d": 1135.0,
-    "delay_diversity": 3
+    "mtbf_days": 2.6, "mtbf_std": 8.22, "mtbf_trend": -0.5,
+    "mttr_min": 25.9, "days_since_last_bd": 2.1, "bd_freq_30d": 11,
+    "avg_avail_7d": 88.5, "avg_avail_30d": 90.1, "avg_tonnage_7d": 232.0,
+    "delay_min_7d": 865.0, "delay_min_30d": 1135.0, "delay_diversity": 3,
+    "breakdown_streak": 2, "delay_acceleration": 1.3,
+    "availability_trend": -0.5, "tonnage_efficiency": 0.85,
+    "time_since_maintenance": 5.0, "breakdown_severity_avg": 45.0
   }
   ```
-- **Response Body (JSON):**
+- **Response Body (JSON) — v2:**
   ```json
   {
     "machine": "WCTL-1",
     "rul_days": 1.5,
+    "risk_class": "IMMINENT",
+    "risk_probability": { "IMMINENT": 0.92, "SOON": 0.08 },
     "risk_band": "RED",
-    "risk_score": 92,
+    "risk_score": 90,
     "confidence": "HIGH",
-    "advice": "⚠ URGENT — WCTL-1 predicted to fail in ~2 days. Schedule immediate inspection.",
+    "advice": "URGENT - WCTL-1 classified as IMMINENT. Predicted failure in ~2 day(s).",
     "feature_contributions": {
-      "days_since_last_bd": 0.15,
-      "bd_freq_30d": 0.12,
-      "mtbf_days": 0.08
-    }
+      "machine_id": 0.15, "avg_avail_7d": 0.12, "days_since_last_bd": 0.08,
+      "delay_min_30d": 0.06, "mtbf_days": 0.05
+    },
+    "model_version": "2.0"
   }
   ```
 
@@ -430,15 +450,16 @@ Follow these simple steps to run the project on your machine:
 ### Step 1: Install Python Dependencies
 Open your Command Prompt (cmd) or PowerShell, go to the project directory, and run:
 ```bash
-pip install pandas openpyxl scikit-learn fastapi uvicorn joblib
+pip install pandas openpyxl scikit-learn fastapi uvicorn joblib imbalanced-learn
 ```
 
 ### Step 2: Train the AI Models (One-Time Setup)
-To build the RUL training table and train the RUL regressor:
+To build the v2 shift-level training table and train the dual RUL classifier + regressor:
 ```bash
 cd rul_tsdpl
 python train.py --data ../sampledata
 ```
+Expected output: Classifier F1-macro ~0.93, 98% accuracy, non-zero feature importances, models saved as `rul_classifier_v2.pkl` and `rul_regressor_v2.pkl`.
 Verify the anomaly detector tests run and pass:
 ```bash
 python ../anomaly_detector/test_anomaly_detector.py

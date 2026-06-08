@@ -1,22 +1,28 @@
 """
-TSDPL — FastAPI RUL Prediction Server
-======================================
+TSDPL — FastAPI RUL Prediction Server  (v2 — Dual Model)
+==========================================================
 Endpoints:
-  POST /predict          → RUL prediction for a single machine's current state
-  GET  /model-info       → training metadata (feature importances, CV scores)
+  POST /predict          → RUL prediction with risk classification
+  GET  /model-info       → training metadata (v2 with classification report)
   GET  /health           → liveness check
+
+Persistence endpoints (unchanged):
+  POST /api/upload-data  → store parsed shift data
+  GET  /api/get-data     → retrieve all shift data
+  POST /api/operator-log → save operator delay entry
+  GET  /api/operator-logs → retrieve operator logs
 
 Run (dev):
     uvicorn api:app --reload --port 8000
 
 Install:
-    pip install fastapi uvicorn scikit-learn pandas openpyxl
+    pip install fastapi uvicorn scikit-learn pandas openpyxl imbalanced-learn
 """
 
 import json
 import pickle
 from pathlib import Path
-from typing import Literal, List, Dict, Any
+from typing import Literal, List, Dict, Any, Optional
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -24,24 +30,52 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # ──────────────────────────────────────────────
-# LOAD MODEL AT STARTUP
+# LOAD MODELS AT STARTUP
 # ──────────────────────────────────────────────
 
-MODEL_PATH = Path(__file__).parent / "rul_model.pkl"
-META_PATH  = Path(__file__).parent / "rul_model_meta.json"
+MODULE_DIR = Path(__file__).parent
 
-if not MODEL_PATH.exists():
-    raise RuntimeError("rul_model.pkl not found — run train.py first.")
+# v2 model paths
+CLASSIFIER_PATH = MODULE_DIR / "rul_classifier_v2.pkl"
+REGRESSOR_PATH  = MODULE_DIR / "rul_regressor_v2.pkl"
+META_V2_PATH    = MODULE_DIR / "rul_model_meta_v2.json"
 
-with open(MODEL_PATH, "rb") as f:
-    MODEL = pickle.load(f)
+# Legacy fallback
+LEGACY_MODEL_PATH = MODULE_DIR / "rul_model.pkl"
+LEGACY_META_PATH  = MODULE_DIR / "rul_model_meta.json"
 
-with open(META_PATH, "r") as f:
-    META = json.load(f)
+# ── Load v2 models if available, else fall back to legacy ──
+IS_V2 = False
+CLASSIFIER = None
+LABEL_ENCODER = None
 
-FEATURE_COLS = META["feature_cols"]
+if CLASSIFIER_PATH.exists() and REGRESSOR_PATH.exists():
+    with open(CLASSIFIER_PATH, "rb") as f:
+        clf_data = pickle.load(f)
+        CLASSIFIER = clf_data["model"]
+        LABEL_ENCODER = clf_data["label_encoder"]
+    with open(REGRESSOR_PATH, "rb") as f:
+        MODEL = pickle.load(f)
+    IS_V2 = True
+    print("[startup] Loaded v2 dual models (classifier + regressor)")
+elif LEGACY_MODEL_PATH.exists():
+    with open(LEGACY_MODEL_PATH, "rb") as f:
+        MODEL = pickle.load(f)
+    print("[startup] Loaded legacy GBR model")
+else:
+    raise RuntimeError("No model files found — run train.py first.")
 
+# ── Load metadata ──
+meta_path = META_V2_PATH if META_V2_PATH.exists() else LEGACY_META_PATH
+if meta_path.exists():
+    with open(meta_path, "r") as f:
+        META = json.load(f)
+else:
+    META = {}
+
+FEATURE_COLS = META.get("feature_cols", [])
 MACHINE_ENC = {"WCTL-1": 0, "WCTL-2": 1, "SLITTER": 2}
+
 
 # ──────────────────────────────────────────────
 # APP
@@ -49,8 +83,8 @@ MACHINE_ENC = {"WCTL-1": 0, "WCTL-2": 1, "SLITTER": 2}
 
 app = FastAPI(
     title="TSDPL RUL Prediction API",
-    description="Remaining Useful Life regression for WCTL-1, WCTL-2, SLITTER",
-    version="1.0.0",
+    description="Remaining Useful Life prediction with risk classification for WCTL-1, WCTL-2, SLITTER",
+    version="2.0.0",
 )
 
 # Allow requests from your frontend (adjust origin in production)
@@ -75,11 +109,11 @@ app.include_router(anomaly_router, prefix="/api/anomaly", tags=["anomaly"])
 class PredictRequest(BaseModel):
     """
     All values are computed client-side from AppState before sending.
-    Your existing analytics.js already calculates most of these.
+    v2 adds 6 new features.
     """
     machine: Literal["WCTL-1", "WCTL-2", "SLITTER"]
 
-    # From your maintenance analytics
+    # Original features
     mtbf_days:          float = Field(..., description="Mean time between failures (days)")
     mtbf_std:           float = Field(0.0,  description="Std dev of MTBF intervals")
     mtbf_trend:         float = Field(0.0,  description="Last interval minus first (negative = worsening)")
@@ -87,7 +121,6 @@ class PredictRequest(BaseModel):
     days_since_last_bd: float = Field(..., description="Days since most recent breakdown")
     bd_freq_30d:        int   = Field(..., description="Breakdown count in last 30 days")
 
-    # From your availability / production analytics
     avg_avail_7d:    float = Field(..., description="Mean availability % last 7 days")
     avg_avail_30d:   float = Field(..., description="Mean availability % last 30 days")
     avg_tonnage_7d:  float = Field(..., description="Mean tonnage per shift last 7 days")
@@ -95,66 +128,90 @@ class PredictRequest(BaseModel):
     delay_min_30d:   float = Field(..., description="Total delay minutes last 30 days")
     delay_diversity: int   = Field(..., description="Unique delay types in last 30 days")
 
+    # New v2 features (with defaults for backward compat)
+    breakdown_streak:      int   = Field(0, description="Consecutive days with breakdowns")
+    delay_acceleration:    float = Field(1.0, description="Ratio of 7d avg delay to 30d avg delay")
+    availability_trend:    float = Field(0.0, description="Slope of daily availability over last 7 days")
+    tonnage_efficiency:    float = Field(1.0, description="Current tonnage / historical mean")
+    time_since_maintenance: float = Field(30.0, description="Days since last planned maintenance")
+    breakdown_severity_avg: float = Field(0.0, description="Avg breakdown duration in last 30 days")
+
 
 class PredictResponse(BaseModel):
-    machine:       str
-    rul_days:      float   # predicted days to next breakdown
-    risk_band:     str     # RED / AMBER / GREEN
-    risk_score:    int     # 0–100 (100 = imminent failure)
-    confidence:    str     # LOW / MEDIUM / HIGH based on training data proximity
-    advice:        str     # auto-generated maintenance recommendation
-    feature_contributions: dict  # top 3 features driving this prediction
+    machine:            str
+    rul_days:           float       # regression estimate (expm1 of log prediction)
+    risk_class:         str         # IMMINENT / SOON / SAFE (from classifier)
+    risk_probability:   Dict[str, float]  # per-class probabilities
+    risk_band:          str         # RED / AMBER / GREEN
+    risk_score:         int         # 0–100 (100 = imminent failure)
+    confidence:         str         # LOW / MEDIUM / HIGH
+    advice:             str
+    feature_contributions: Dict[str, float]
+    model_version:      str         # "1.0" or "2.0"
 
 
 # ──────────────────────────────────────────────
 # HELPERS
 # ──────────────────────────────────────────────
 
-def compute_risk_band(rul: float, mtbf: float) -> tuple[str, int]:
-    """Convert RUL days to a risk band using MTBF as the scale."""
+def risk_class_to_band(risk_class: str) -> tuple:
+    """Map classifier risk class to dashboard band and score."""
+    if risk_class == "IMMINENT":
+        return "RED", 90
+    elif risk_class == "SOON":
+        return "AMBER", 55
+    else:
+        return "GREEN", 15
+
+
+def compute_risk_band_legacy(rul: float, mtbf: float) -> tuple:
+    """Legacy: Convert RUL days to a risk band using MTBF as the scale."""
     if mtbf <= 0:
         mtbf = max(rul, 1.0)
-
-    ratio = rul / mtbf  # 1.0 = right on average; <0.5 = trouble
-
+    ratio = rul / mtbf
     if   ratio < 0.35:  return "RED",   min(100, int(100 - ratio * 100))
     elif ratio < 0.70:  return "AMBER", int(70  - ratio * 40)
     else:               return "GREEN", max(0,  int(40  - ratio * 20))
 
 
-def build_advice(rul: float, band: str, req: PredictRequest) -> str:
+def build_advice(rul: float, band: str, risk_class: str, req: PredictRequest) -> str:
     machine = req.machine
     if band == "RED":
         return (
-            f"⚠ URGENT — {machine} predicted to fail in ~{rul:.0f} days. "
+            f"⚠ URGENT — {machine} classified as {risk_class}. "
+            f"Predicted failure in ~{rul:.0f} day(s). "
             f"Schedule immediate inspection. MTTR is {req.mttr_min:.0f} min; "
             f"prepare spare parts and maintenance crew now."
         )
     elif band == "AMBER":
         return (
-            f"⚡ CAUTION — {machine} showing wear signals. "
+            f"⚡ CAUTION — {machine} classified as {risk_class}. "
             f"Plan preventive maintenance within {rul:.0f} days. "
-            f"Availability has dropped to {req.avg_avail_7d:.1f}% (7-day avg)."
+            f"Availability has dropped to {req.avg_avail_7d:.1f}% (7-day avg). "
+            f"Breakdown streak: {req.breakdown_streak} days."
         )
     else:
         return (
-            f"✓ {machine} is healthy. Next predicted failure in ~{rul:.0f} days. "
+            f"✓ {machine} is healthy (classified {risk_class}). "
+            f"Next predicted failure in ~{rul:.0f} days. "
             f"Continue standard maintenance schedule."
         )
 
 
-def top_feature_contributions(feature_vector: list) -> dict:
+def top_feature_contributions(feature_vector: list, model) -> dict:
     """
-    Approximate per-feature contribution using the model's
-    feature importances × normalised feature values.
-    Simple and interview-explainable without needing SHAP.
+    Per-feature contribution using the model's feature importances
+    × normalised feature values.
     """
-    importances = MODEL.feature_importances_
+    importances = model.feature_importances_
     fv = np.array(feature_vector)
 
-    # Normalise to 0-1 range (rough)
+    # Check if importances are all zero (broken model)
+    if importances.sum() == 0:
+        return {FEATURE_COLS[i]: 0.0 for i in range(min(3, len(FEATURE_COLS)))}
+
     contrib = importances * np.abs(fv / (np.abs(fv).max() + 1e-9))
-    top_idx = contrib.argsort()[::-1][:3]
+    top_idx = contrib.argsort()[::-1][:5]  # top 5 instead of 3
 
     return {
         FEATURE_COLS[i]: round(float(contrib[i]), 4)
@@ -168,7 +225,13 @@ def top_feature_contributions(feature_vector: list) -> dict:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "GradientBoostingRegressor", "version": "1.0.0"}
+    return {
+        "status": "ok",
+        "model_version": "2.0" if IS_V2 else "1.0",
+        "classifier": "GradientBoostingClassifier" if IS_V2 else "none",
+        "regressor": "GradientBoostingRegressor",
+        "is_v2": IS_V2,
+    }
 
 
 @app.get("/model-info")
@@ -197,30 +260,65 @@ def predict(req: PredictRequest):
         req.delay_min_30d,
         req.delay_diversity,
         machine_enc,
+        # v2 features
+        req.breakdown_streak,
+        req.delay_acceleration,
+        req.availability_trend,
+        req.tonnage_efficiency,
+        req.time_since_maintenance,
+        req.breakdown_severity_avg,
     ]
 
-    rul = float(MODEL.predict([feature_vector])[0])
+    # ── Regression prediction ──
+    rul_log = float(MODEL.predict([feature_vector])[0])
+    rul = float(np.expm1(rul_log))  # inverse of log1p
     rul = max(0.5, round(rul, 1))   # floor at half a day
 
-    band, score = compute_risk_band(rul, req.mtbf_days)
+    # ── Classification prediction (v2) ──
+    if IS_V2 and CLASSIFIER is not None:
+        class_idx = CLASSIFIER.predict([feature_vector])[0]
+        class_proba = CLASSIFIER.predict_proba([feature_vector])[0]
+        risk_class = LABEL_ENCODER.inverse_transform([class_idx])[0]
 
-    # Confidence: based on how close training data covers this machine
-    n_train  = META["n_training_rows"]
-    confidence = "HIGH" if n_train >= 30 else ("MEDIUM" if n_train >= 10 else "LOW")
+        risk_probability = {
+            cls: round(float(p), 3)
+            for cls, p in zip(LABEL_ENCODER.classes_, class_proba)
+        }
+
+        band, score = risk_class_to_band(risk_class)
+
+        # Confidence based on probability margin
+        sorted_proba = sorted(class_proba, reverse=True)
+        margin = sorted_proba[0] - (sorted_proba[1] if len(sorted_proba) > 1 else 0)
+        confidence = "HIGH" if margin > 0.5 else ("MEDIUM" if margin > 0.2 else "LOW")
+
+        # Feature contributions from classifier (which actually learned features)
+        contribs = top_feature_contributions(feature_vector, CLASSIFIER)
+    else:
+        # Legacy mode
+        risk_class = "UNKNOWN"
+        risk_probability = {}
+        band, score = compute_risk_band_legacy(rul, req.mtbf_days)
+        n_train = META.get("n_training_rows", 0)
+        confidence = "HIGH" if n_train >= 30 else ("MEDIUM" if n_train >= 10 else "LOW")
+        contribs = top_feature_contributions(feature_vector, MODEL)
 
     return PredictResponse(
-        machine       = req.machine,
-        rul_days      = rul,
-        risk_band     = band,
-        risk_score    = score,
-        confidence    = confidence,
-        advice        = build_advice(rul, band, req),
-        feature_contributions = top_feature_contributions(feature_vector),
+        machine              = req.machine,
+        rul_days             = rul,
+        risk_class           = risk_class,
+        risk_probability     = risk_probability,
+        risk_band            = band,
+        risk_score           = score,
+        confidence           = confidence,
+        advice               = build_advice(rul, band, risk_class, req),
+        feature_contributions = contribs,
+        model_version        = "2.0" if IS_V2 else "1.0",
     )
 
 
 # ──────────────────────────────────────────────
-# PERSISTENCE ENDPOINTS
+# PERSISTENCE ENDPOINTS (unchanged from v1)
 # ──────────────────────────────────────────────
 
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploaded_data"
@@ -230,7 +328,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 def upload_data(machine: str, data: List[Dict[str, Any]]):
     if machine not in ["SLITTER", "WCTL-1", "WCTL-2"]:
         raise HTTPException(status_code=400, detail="Invalid machine name")
-    
+
     file_path = UPLOAD_DIR / f"{machine}.json"
     try:
         with open(file_path, "w", encoding="utf-8") as f:
@@ -268,9 +366,9 @@ def operator_log(log_entry: Dict[str, Any]):
         except Exception as e:
             print(f"Error reading operator_logs.json: {e}")
             logs = []
-    
+
     logs.append(log_entry)
-    
+
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(logs, f, ensure_ascii=False, indent=2)
