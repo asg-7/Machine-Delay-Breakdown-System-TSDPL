@@ -305,6 +305,71 @@ function updateUCNCards(shifts) {
   if (gc) gc.textContent = shifts.length.toLocaleString();
 }
 
+
+async function loadFromSupabase() {
+  const overlay = document.getElementById('supabase-loading-overlay');
+  try {
+    if (!window.supabase) {
+      throw new Error("Supabase client not initialized.");
+    }
+    const { data, error } = await window.supabase
+      .from('delay_logs')
+      .select('*')
+      .order('date', { ascending: true });
+
+    if (error) throw error;
+
+    if (Array.isArray(data)) {
+      window.RAW_DATA = data.map(row => ({
+        machine:       row.machine,
+        date:          row.date,
+        shift:         row.shift,
+        incharge:      row.incharge,
+        team:          row.team,
+        tonnage:       parseFloat(row.tonnage) || 0,
+        coils:         parseInt(row.coils) || 0,
+        delays:        row.delays || [],
+        source:        row.source,
+        employeeId:    row.employee_id,
+        startTime:     row.start_time,
+        endTime:       row.end_time,
+        timestamp:     row.timestamp
+      }));
+      console.log(`Loaded ${window.RAW_DATA.length} records from Supabase.`);
+      
+      // Update local card UI
+      updateUCNCards(window.RAW_DATA);
+      
+      // Refresh UI state
+      if (typeof populateFilters === 'function') populateFilters();
+      if (typeof applyFilters === 'function') applyFilters();
+      
+      // Clear page caches and re-render
+      window.filterRevision = (window.filterRevision || 0) + 1;
+      window.renderedRevisions = {};
+      const activeTab = document.querySelector('.tab.active');
+      if (activeTab && typeof renderPage === 'function') {
+        renderPage(activeTab.dataset.page);
+      }
+      
+      // Run anomaly detection
+      if (typeof runAnomalyDetection === 'function' && window.RAW_DATA.length > 0) {
+        runAnomalyDetection(window.RAW_DATA);
+      }
+    }
+  } catch(e) {
+    console.warn("Supabase load failed. Falling back to local backend data.", e);
+    await loadSharedBackendData();
+    if (typeof populateFilters === 'function') populateFilters();
+    if (typeof applyFilters === 'function') applyFilters();
+  } finally {
+    if (overlay) {
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), 400);
+    }
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   // Check session first
   if (typeof checkSession === 'function') {
@@ -316,13 +381,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     initOperatorClock();
   }
 
-  // Load backend data
-  await loadSharedBackendData();
+  // Load backend data from Supabase
+  await loadFromSupabase();
 
   if (window.RAW_DATA && window.RAW_DATA.length > 0) {
-    // Run anomaly detection
-    await runAnomalyDetection(window.RAW_DATA);
-    
     // Automatically switch active tab/page from upload to overview
     const uploadTab = document.querySelector('.tab[data-page="upload"]');
     const overviewTab = document.querySelector('.tab[data-page="overview"]');
@@ -339,11 +401,29 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  populateFilters();
-  applyFilters();
   setupNav();
   setupFilterEvents();
   
   setInterval(updateClock, 1000);
   updateClock();
+
+  // Set up Supabase Realtime channel subscription
+  if (window.supabase) {
+    window.supabase
+      .channel('delay_logs_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'delay_logs'
+      }, (payload) => {
+        console.log('New database change received:', payload);
+        if (window._supabaseDebounceTimer) clearTimeout(window._supabaseDebounceTimer);
+        window._supabaseDebounceTimer = setTimeout(() => {
+          loadFromSupabase();
+        }, 1000);
+      })
+      .subscribe((status) => {
+        console.log(`Supabase Realtime subscription status: ${status}`);
+      });
+  }
 });

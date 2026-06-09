@@ -909,6 +909,30 @@ async function submitOperatorForm() {
   const shiftText = document.getElementById('op-shiftField').value; // e.g. "SHIFT A"
   const shift = shiftText.replace('SHIFT ', '');
   const line = document.getElementById('op-line-badge').dataset.val;
+
+  // Supabase Duplicate Guard Check
+  if (window.supabase) {
+    try {
+      const { data, error } = await window.supabase
+        .from('delay_logs')
+        .select('id')
+        .eq('machine', line)
+        .eq('date', dateStr)
+        .eq('shift', shift)
+        .eq('employee_id', employeeId)
+        .eq('source', 'operator');
+
+      if (error) {
+        console.error("Supabase duplicate check failed:", error.message);
+      } else if (data && data.length > 0) {
+        alert(`⚠️ Duplicate Submission Blocked!\nYou have already submitted a log for ${line} on ${dateStr} (Shift ${shift}).`);
+        return;
+      }
+    } catch (err) {
+      console.warn("Could not check duplicate entries in Supabase.", err);
+    }
+  }
+
   const incharge = document.getElementById('op-inchargeField').value;
   const team = document.getElementById('op-teamField').value;
   const tonnage = parseFloat(document.getElementById('op-tonnageField').value);
@@ -1009,6 +1033,11 @@ async function submitOperatorForm() {
   const localLogs = JSON.parse(localStorage.getItem('tsdpl_operator_logs') || '[]');
   localLogs.push(logEntry);
   localStorage.setItem('tsdpl_operator_logs', JSON.stringify(localLogs));
+
+  // 4. Save to Supabase
+  if (window.supabase) {
+    await saveOperatorLogToSupabase(logEntry);
+  }
 
   // 4. Update the live RAW_DATA in memory so it reflects instantly if we view dashboard
   // (We'll also reload it from backend/localStorage on dashboard initialization)
@@ -1240,4 +1269,36 @@ function downloadAdminLogsCSV() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+async function saveOperatorLogToSupabase(logEntry) {
+  try {
+    const formatted = {
+      machine:       logEntry.machine,
+      date:          logEntry.date,
+      shift:         logEntry.shift,
+      incharge:      logEntry.incharge,
+      team:          logEntry.team,
+      tonnage:       logEntry.tonnage,
+      coils:         logEntry.coils,
+      delays:        logEntry.delays || [],
+      source:        'operator',
+      employee_id:    logEntry.employeeId,
+      start_time:     logEntry.startTime,
+      end_time:       logEntry.endTime,
+      timestamp:     logEntry.timestamp
+    };
+
+    const { error } = await window.supabase
+      .from('delay_logs')
+      .insert([formatted]);
+
+    if (error) {
+      console.error('Failed to save operator log to Supabase:', error.message);
+    } else {
+      console.log('Operator log saved to Supabase successfully.');
+    }
+  } catch(e) {
+    console.error('Supabase Operator Log upload error:', e);
+  }
 }

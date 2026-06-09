@@ -334,6 +334,11 @@ async function handleUpload(event, machine) {
       if (countSpan) countSpan.textContent = shifts.length;
     }
 
+    // Sync parsed Excel rows to Supabase
+    if (window.supabase) {
+      await uploadExcelToSupabase(shifts, machine);
+    }
+
     statusDiv.innerHTML += `<br>✅ <span style="color:var(--accent3)">${machine}</span>: ${shifts.length} shifts loaded (${validRows} delay rows). Old ${machine} data replaced.`;
 
     // Refresh filters and data
@@ -357,5 +362,60 @@ async function handleUpload(event, machine) {
   } catch (err) {
     console.error(err);
     statusDiv.innerHTML += `<br>❌ <strong>Error:</strong> ${err.message}. Open DevTools (F12) → Console for details.`;
+  }
+}
+
+async function uploadExcelToSupabase(shifts, machine) {
+  const statusDiv = document.getElementById('upload-status');
+  const originalHtml = statusDiv.innerHTML;
+  try {
+    statusDiv.innerHTML = originalHtml + `<br>⏳ Uploading data to Supabase…`;
+    
+    // 1. Delete existing excel shifts for this machine
+    const { error: deleteError } = await window.supabase
+      .from('delay_logs')
+      .delete()
+      .eq('machine', machine)
+      .eq('source', 'excel');
+
+    if (deleteError) {
+      console.error(`Failed to delete old Excel shifts for ${machine} from Supabase:`, deleteError.message);
+      statusDiv.innerHTML = originalHtml + `<br>⚠️ Supabase delete error: ${deleteError.message}`;
+      return;
+    }
+
+    // 2. Format new shifts
+    const formatted = shifts.map(row => ({
+      machine:       machine,
+      date:          row.date,
+      shift:         row.shift,
+      incharge:      row.incharge,
+      team:          row.team,
+      tonnage:       row.tonnage,
+      coils:         row.coils,
+      delays:        row.delays || [],
+      source:        'excel'
+    }));
+
+    // 3. Batch insert in chunks of 200
+    const chunkSize = 200;
+    for (let i = 0; i < formatted.length; i += chunkSize) {
+      const chunk = formatted.slice(i, i + chunkSize);
+      statusDiv.innerHTML = originalHtml + `<br>⏳ Uploading to Supabase (${i} of ${formatted.length})…`;
+      const { error: insertError } = await window.supabase
+        .from('delay_logs')
+        .insert(chunk);
+
+      if (insertError) {
+        console.error(`Failed to upload batch ${i} to Supabase:`, insertError.message);
+        throw insertError;
+      }
+    }
+
+    console.log(`Successfully uploaded ${formatted.length} Excel shifts for ${machine} to Supabase.`);
+    statusDiv.innerHTML = originalHtml + `<br>✅ Synced ${formatted.length} shifts to Supabase.`;
+  } catch(e) {
+    console.error('Supabase Excel upload error:', e);
+    statusDiv.innerHTML = originalHtml + `<br>❌ Supabase upload failed: ${e.message}`;
   }
 }
