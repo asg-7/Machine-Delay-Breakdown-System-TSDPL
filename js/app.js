@@ -181,61 +181,6 @@ async function runAnomalyDetection(shiftRecords) {
   }
 }
 
-async function loadSharedBackendData() {
-  // 1. Fetch excel data from backend
-  try {
-    const res = await fetch('http://127.0.0.1:8000/api/get-data');
-    if (res.ok) {
-      const serverShifts = await res.json();
-      if (Array.isArray(serverShifts) && serverShifts.length > 0) {
-        window.RAW_DATA = serverShifts;
-        console.log(`Loaded ${serverShifts.length} shifts from FastAPI backend.`);
-        updateUCNCards(serverShifts);
-      }
-    }
-  } catch(e) {
-    console.warn("FastAPI backend offline or unreachable. Using offline mode.", e);
-  }
-
-  // 2. Load operator logs from backend or localStorage, and merge them
-  let operatorLogs = [];
-  try {
-    const res = await fetch('http://127.0.0.1:8000/api/operator-logs');
-    if (res.ok) {
-      operatorLogs = await res.json();
-    }
-  } catch(e) {
-    console.warn("Backend offline. Loading operator logs from localStorage.");
-    operatorLogs = JSON.parse(localStorage.getItem('tsdpl_operator_logs') || '[]');
-  }
-
-  if (Array.isArray(operatorLogs) && operatorLogs.length > 0) {
-    operatorLogs.forEach(log => {
-      const shiftObj = {
-        date: log.date,
-        shift: log.shift,
-        incharge: log.incharge,
-        team: log.team,
-        machine: log.machine,
-        tonnage: log.tonnage,
-        coils: log.coils,
-        delays: log.delays.map(d => ({
-          time: d.time,
-          type: d.type,
-          description: d.description,
-          reason: d.reason
-        }))
-      };
-
-      // Avoid duplicates
-      window.RAW_DATA = window.RAW_DATA.filter(r =>
-        !(r.date === shiftObj.date && r.shift === shiftObj.shift && r.machine === shiftObj.machine && r.incharge === shiftObj.incharge && r.team === shiftObj.team)
-      );
-      window.RAW_DATA.push(shiftObj);
-    });
-  }
-}
-
 function getMinMaxDates(shifts) {
   if (!shifts || shifts.length === 0) return null;
   const dates = [];
@@ -358,8 +303,7 @@ async function loadFromSupabase() {
       }
     }
   } catch(e) {
-    console.warn("Supabase load failed. Falling back to local backend data.", e);
-    await loadSharedBackendData();
+    console.warn("Supabase load failed:", e);
     if (typeof populateFilters === 'function') populateFilters();
     if (typeof applyFilters === 'function') applyFilters();
   } finally {
