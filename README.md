@@ -15,7 +15,7 @@ This project does four main things:
 3. **Uses Machine Learning (AI brains)** to:
    - **Predict when a machine is going to break down next** (Remaining Useful Life, or **RUL**).
    - **Flag weird work shifts** that had unusual levels of downtime or low production (called **Anomaly Detection**).
-4. **Allows Operators to log shift downtime directly** via a secure, automatic terminal that locks to their machine line and syncs inputs to a shared backend in real-time.
+4. **Allows Operators to log shift downtime directly** via a secure, automatic terminal that locks to their machine line and syncs inputs to a shared backend and a cloud-hosted **Supabase database** in real-time.
 
 ---
 
@@ -24,6 +24,10 @@ This project does four main things:
 Here is how data moves step-by-step through the system:
 
 ```
+[ Supabase Database ] <──(Realtime Sync/Insert)──> [ app.js ]
+                                                       │
+                                                 (Load/Save)
+                                                       ▼
 [ Excel File ] ──(Upload)──> [ parser.js ] ──> [ RAW_DATA[] ]
                                                     │
              ┌──────────────────────────────────────┴──────────────────────────────────────┐
@@ -35,15 +39,14 @@ Here is how data moves step-by-step through the system:
      [ analytics.js ]                         [ charts.js ]                                │
     (Calculate & Render)                   (Create Chart.js)             ┌─────────────────┴─────────────────┐
              │                                      │                    ▼                                   ▼
-             ▼                                      ▼             [ RUL Backend ]                     [ Anomaly Backend ]
      [ HTML Dashboard ] <───────────────────────────┘            (Gradient Boosting)                  (Isolation Forest)
              ▲                                                           │                                   │
              │                                                           ▼                                   ▼
              └──────────────────(POST /predict & POST /api/anomaly/detect)───────────────────────────────────┘
 ```
 
-1. **You upload an Excel sheet** containing shift logs for WCTL-1, WCTL-2, or SLITTER.
-2. **`parser.js` reads it** inside your web browser and extracts details like dates, shifts, who was in charge (Incharge), tonnage produced, and delays.
+1. **The application connects to Supabase** on page load, retrieves all stored shift logs into `RAW_DATA[]`, and sets up a PostgreSQL change listener to trigger real-time updates.
+2. **You can also upload an Excel sheet** containing shift logs for WCTL-1, WCTL-2, or SLITTER, which is parsed by `parser.js`.
 3. **`filters.js` cleans the data**, fixes spelling mistakes in names, categorizes delays, and calculates how many minutes each machine was running.
 4. **`analytics.js` calculates plant statistics** (like availability and repair times) and tells **`charts.js`** to draw beautiful visual graphs.
 5. **The browser talks to the Python server (FastAPI)**:
@@ -147,15 +150,16 @@ Let's look inside every single file and explain exactly what every function (cod
   - `var RAW_DATA = [];` - Initialized as empty on startup. When you upload Excel files, this array is filled with shift logs.
 
 #### 4. [js/app.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/app.js)
-- **What it does:** The bootstrap orchestrator. It manages startup, navigation, and links the Excel parser output to the anomaly detection backend.
+- **What it does:** The bootstrap orchestrator. It manages startup, navigation, connects to the cloud Supabase database, and links data to the local anomaly detection backend.
 - **Code-Blocks:**
   - `updateClock()`: Runs every second. It reads the current clock time and automatically calculates if the plant is in Shift A (06:00 - 14:00), Shift B (14:00 - 22:00), or Shift C (22:00 - 06:00).
   - `setupNav()`: Listens for clicks on navigation tabs, switches pages, and triggers redraws.
   - `setupFilterEvents()`: Listens for clicks on the filter "APPLY" or "RESET" buttons and handles typing in the search box.
   - `runAnomalyDetection(shiftRecords)`: Sends the uploaded shift logs to the FastAPI server (`POST /api/anomaly/detect`) to flag any unusual shifts. It saves the results globally as `window.ANOMALY_RESULTS`.
+  - `loadFromSupabase()`: Connects to Supabase, pulls all records from the `delay_logs` table, maps them to the local `RAW_DATA` structure, updates the UI cards, and runs the anomaly detection model.
   - `getMinMaxDates(shifts)`: Parses shift dates to find the earliest (start) and latest (end) dates chronologically.
   - `updateUCNCards(shifts)`: Refreshes upload cards with accurate shift counts and date ranges, toggling status badges and display states.
-  - `DOMContentLoaded` listener: Loads previously saved logs from backend server on page load, runs anomaly detection, and automatically switches active navigation to the **OVERVIEW** page if data exists.
+  - `DOMContentLoaded` listener: Calls `loadFromSupabase()` to fetch historical logs from the cloud database, sets up a Supabase Realtime subscription on `delay_logs` updates, runs anomaly detection, and automatically switches active navigation to the **OVERVIEW** page if data exists.
 
 #### 5. [js/parser.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/parser.js)
 - **What it does:** The Excel translator. It uses the SheetJS library to convert Excel spreadsheet rows into clean JavaScript objects.
@@ -206,14 +210,15 @@ Let's look inside every single file and explain exactly what every function (cod
   - `renderRULPredictions()`: Filters active machines (only machines with uploaded data), shows a loading spinner, requests predictions, and hides empty cards.
 
 #### 10. [js/delay_entry.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/delay_entry.js)
-- **What it does:** Logic controller for the Operator Delay Entry Terminal, managing form creation, login gating, dynamic dropdown loading, alphanumeric validation, and log persistence.
+- **What it does:** Logic controller for the Operator Delay Entry Terminal, managing form creation, login gating, dynamic dropdown loading, alphanumeric validation, database integration, and log persistence.
 - **Code-Blocks:**
   - `getISTDateTime()`: Calculates the current Date and Shift (Shift A: 06:00-14:00, Shift B: 14:00-22:00, Shift C: 22:00-06:00 IST) based on the system clock.
   - `handleLogin(event)`: Validates credentials and gates dashboard view by user role (Operator or Admin).
   - `setupOperatorForm(line)`: Pre-fills and locks the machine line selection and auto-sets the read-only Date and Shift.
   - `addOperatorDelayEntry()`: Appends a new delay log entry row with cascading selects dynamically loaded from Sheet 3 reference data for the operator's line.
-  - `submitOperatorForm()`: Validates inputs (non-negative tonnage/coils, positive minutes, alphanumeric-only description for "OTHER" reasons), posts to backend `/api/operator-log`, saves locally, and opens the Export modal.
-  - `loadAdminLogs()`: Fetches operator entries from the backend server to draw a unified audit table.
+  - `submitOperatorForm()`: Checks for duplicates in Supabase to guard against double-submits, validates inputs (non-negative tonnage/coils, positive minutes, alphanumeric-only description for "OTHER" reasons), posts to the local backend, saves locally in `localStorage`, inserts the log record into Supabase via `saveOperatorLogToSupabase(logEntry)`, and opens the Export modal.
+  - `saveOperatorLogToSupabase(logEntry)`: Formats the operator log entry and performs an insert query to the `delay_logs` table in Supabase.
+  - `loadAdminLogs()`: Fetches operator logs to render a unified audit table in the Admin panel.
 
 ---
 
@@ -614,8 +619,48 @@ When data is loaded or uploaded, the main upload card displays the specific date
 
 ### 2. Auto-Load Persistence across Sessions
 When an admin opens the dashboard:
-* **Background Sync**: The app automatically makes a `GET` request to the backend server `/api/get-data`.
-* **Zero-config Load**: If data has been previously uploaded, it is restored into memory, anomaly detection is executed, and the user is redirected straight to the **OVERVIEW** tab populated with stats.
-* **Fallback**: Works offline gracefully via local in-memory simulation.
+* **Background Sync**: The app automatically queries the cloud-hosted Supabase database to fetch all stored shift logs.
+* **Zero-config Load**: Once loaded, logs are restored into memory, anomaly detection is executed (via the local FastAPI server if active), and the user is redirected straight to the **OVERVIEW** tab populated with stats.
+* **Realtime Updates**: The app subscribes to PostgreSQL changes on the `delay_logs` table via Supabase Realtime, automatically refreshing dashboard data when new operator logs are submitted.
+* **Fallback**: Works offline gracefully via local in-memory simulation or local backend fallbacks if configured.
+
+---
+
+## ☁️ 13. Supabase Cloud Database Integration
+
+The system uses a hosted Supabase PostgreSQL instance as its primary database. This allows real-time synchronization between operator submissions and the admin dashboard across different machines without relying on local files on a single PC.
+
+### 1. Database Schema (`delay_logs` table)
+The table is named `delay_logs` and contains the following columns:
+* `id`: `int8` (Primary Key, Auto-incrementing)
+* `machine`: `text` (e.g., `'SLITTER'`, `'WCTL-1'`, `'WCTL-2'`)
+* `date`: `text` (format: `DD.MM.YYYY`)
+* `shift`: `text` (e.g., `'A'`, `'B'`, `'C'`)
+* `incharge`: `text` (Supervisor name)
+* `team`: `text` (Operator team name)
+* `tonnage`: `numeric` (Coil tonnage)
+* `coils`: `int4` (Number of coils)
+* `delays`: `jsonb` (List of delay rows: time, type, description, reason)
+* `source`: `text` (typically `'operator'` or `'excel'`)
+* `employee_id`: `text` (Employee ID of the operator)
+* `start_time`: `text` (e.g., `'06:00'`)
+* `end_time`: `text` (e.g., `'14:00'`)
+* `timestamp`: `timestamptz` (Log submission timestamp)
+
+### 2. Duplicate Submission Guard
+When operators submit a downtime log, the system performs a pre-submission duplicate check on Supabase to verify if a record matching the same machine (`machine`), date (`date`), shift (`shift`), employee ID (`employee_id`), and source (`source`) already exists. If a match is found, the submission is blocked with an alert to prevent duplicate database rows.
+
+### 3. Realtime Synchronisation
+The dashboard subscribes to database updates using Supabase's Realtime channel:
+```javascript
+window.supabase
+  .channel('delay_logs_changes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'delay_logs' }, (payload) => {
+    // Reloads data from Supabase automatically when a change is detected
+    loadFromSupabase();
+  })
+  .subscribe();
+```
+
 
 
