@@ -513,6 +513,12 @@ function checkSession() {
   }
 }
 
+function handleGuestLogin() {
+  const user = { role: "guest", employeeId: "GUEST" };
+  sessionStorage.setItem('tsdpl_session', JSON.stringify(user));
+  applyUserRole(user);
+}
+
 function handleLogin(event) {
   if (event) event.preventDefault();
   
@@ -547,17 +553,28 @@ function handleLogin(event) {
 function applyUserRole(user) {
   document.getElementById('login-container').style.display = 'none';
   
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'guest') {
     document.getElementById('operator-container').style.display = 'none';
     document.getElementById('admin-container').style.display = 'block';
     
-    // Unhide the Operator Logs tab
+    // Hide/show the Operator Logs tab
     const logsTab = document.querySelector('.tab[data-page="operator-logs"]');
-    if (logsTab) logsTab.style.display = 'block';
+    if (logsTab) {
+      logsTab.style.display = (user.role === 'admin') ? 'block' : 'none';
+    }
     
     // Switch to Overview or Upload (Overview is default tab)
     const activeTab = document.querySelector('.tab.active');
-    if (activeTab && activeTab.dataset.page === 'operator-logs') {
+    if (activeTab && activeTab.dataset.page === 'operator-logs' && user.role !== 'admin') {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      const overviewTab = document.querySelector('.tab[data-page="overview"]');
+      if (overviewTab) {
+        overviewTab.classList.add('active');
+        document.getElementById('page-overview').classList.add('active');
+        renderPage('overview');
+      }
+    } else if (activeTab) {
       // do nothing
     } else {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -569,7 +586,9 @@ function applyUserRole(user) {
         renderPage('overview');
       }
     }
-    loadAdminLogs();
+    if (user.role === 'admin') {
+      loadAdminLogs();
+    }
   } else {
     // Operator Role
     document.getElementById('admin-container').style.display = 'none';
@@ -1158,20 +1177,43 @@ function confirmOpReset() {
 async function loadAdminLogs() {
   let logs = [];
   
-  // 1. Fetch from Backend /api/operator-logs
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/operator-logs`);
-    if (res.ok) {
-      logs = await res.json();
+  if (window.supabase) {
+    try {
+      const { data, error } = await window.supabase
+        .from('delay_logs')
+        .select('*')
+        .eq('source', 'operator')
+        .order('timestamp', { ascending: false });
+      
+      if (error) throw error;
+      if (data) {
+        logs = data.map(row => ({
+          id:            row.id,
+          machine:       row.machine,
+          date:          row.date,
+          shift:         row.shift,
+          incharge:      row.incharge,
+          team:          row.team,
+          tonnage:       parseFloat(row.tonnage) || 0,
+          coils:         parseInt(row.coils) || 0,
+          delays:        row.delays || [],
+          source:        row.source,
+          employeeId:    row.employee_id,
+          startTime:     row.start_time,
+          endTime:       row.end_time,
+          timestamp:     row.timestamp
+        }));
+      }
+    } catch(err) {
+      console.warn("Supabase load failed. Loading operator logs from localStorage.", err);
+      logs = JSON.parse(localStorage.getItem('tsdpl_operator_logs') || '[]');
+      logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
-  } catch(err) {
-    console.warn("Backend offline. Loading operator logs from localStorage.", err);
+  } else {
     // Fallback: Read from LocalStorage
     logs = JSON.parse(localStorage.getItem('tsdpl_operator_logs') || '[]');
+    logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
   }
-  
-  // Sort logs by timestamp descending (newest first)
-  logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
   
   const tbody = document.getElementById('op-logs-tbody');
   const countSpan = document.getElementById('op-logs-count');
@@ -1184,7 +1226,7 @@ async function loadAdminLogs() {
   if (logs.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="10" style="text-align:center;color:var(--muted);padding:30px;">
+        <td colspan="12" style="text-align:center;color:var(--muted);padding:30px;">
           No operator entries logged yet.
         </td>
       </tr>
@@ -1194,7 +1236,7 @@ async function loadAdminLogs() {
   
   logs.forEach(log => {
     const tr = document.createElement('tr');
-    const timeLocal = new Date(log.timestamp).toLocaleString('en-IN');
+    const timeLocal = log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN') : '--';
     
     // Format delays list preview
     const delaySummaries = log.delays.map(d => `${d.type} (${d.time}m: ${d.reason})`).join(', ');
@@ -1211,9 +1253,38 @@ async function loadAdminLogs() {
       <td style="font-family:var(--font-mono);">${log.coils}</td>
       <td style="font-family:var(--font-mono);color:var(--accent4);font-weight:600;">${log.totalDelayMin} min</td>
       <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${delaySummaries}">${delaySummaries}</td>
+      <td>
+        <button class="filter-btn" style="padding: 4px 8px; font-size: 10px; background: var(--accent3); color: #000; border: none; border-radius: 4px; cursor: pointer;" onclick="promoteOperatorLog(${log.id})">
+          ➕ ADD TO FILE DATA
+        </button>
+      </td>
     `;
     tbody.appendChild(tr);
   });
+}
+
+async function promoteOperatorLog(logId) {
+  if (!window.supabase) {
+    alert("Supabase client is not initialized.");
+    return;
+  }
+  if (!confirm("Are you sure you want to promote this operator entry to official file data?")) {
+    return;
+  }
+  try {
+    const { error } = await window.supabase
+      .from('delay_logs')
+      .update({ source: 'excel' })
+      .eq('id', logId);
+      
+    if (error) throw error;
+    
+    alert("Successfully promoted operator log to file data! Dashboard will refresh automatically.");
+    loadAdminLogs();
+  } catch(e) {
+    console.error("Failed to promote operator log:", e);
+    alert(`Error: ${e.message}`);
+  }
 }
 
 function downloadAdminLogsCSV() {

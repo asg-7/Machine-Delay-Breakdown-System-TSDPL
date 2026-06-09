@@ -296,6 +296,9 @@ async function loadFromSupabase() {
       if (activeTab && typeof renderPage === 'function') {
         renderPage(activeTab.dataset.page);
       }
+      if (activeTab && activeTab.dataset.page === 'operator-logs' && typeof loadAdminLogs === 'function') {
+        loadAdminLogs();
+      }
       
       // Run anomaly detection
       if (typeof runAnomalyDetection === 'function' && window.RAW_DATA.length > 0) {

@@ -586,6 +586,8 @@ The system checks entered credentials against a secure list:
   * `OP-WCTL-02` (WCTL-2 Operator)
 * **Admin IDs**:
   * `ADMIN01`, `ADMIN02`, `ADMIN03`, `ADMIN04`
+* **Guest / View-only Access**:
+  * Anyone can bypass the login gate by clicking **VIEW DASHBOARD (GUEST ACCESS)**. Guest users have view-only access to all dashboard pages, analytics, and predictions, but cannot submit operator logs or access the operator audit panel.
 
 ### 2. Operator Interface Controls
 When an operator logs in:
@@ -598,8 +600,9 @@ When an operator logs in:
 When an admin logs in:
 * They are navigated to the **Production Analytics Dashboard** with full access to files upload, trends, and ML cards.
 * They gain access to a new **OPERATOR LOGS** tab.
-* This tab queries `GET /api/operator-logs` to show a searchable table of all submissions, indicating who inputted what, when (server timestamp), tonnage, and individual downtime details.
+* This tab queries the Supabase database directly to show a table of all active operator submissions, indicating who inputted what, when (server timestamp), tonnage, and individual downtime details.
 * Admins can download the compiled log database as a CSV for reporting.
+* **Promote to File Data**: Next to each operator entry in the logs table, Admins have a button `➕ ADD TO FILE DATA`. Clicking this updates the record's source to `'excel'` in Supabase, officially incorporating it into the file-uploaded dataset so that it remains permanently as part of the shared database.
 * All operator entries automatically merge into `window.RAW_DATA` on page load, dynamically feeding the Overview, Delay Analysis, and Pareto graphs.
 
 

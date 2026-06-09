@@ -671,6 +671,7 @@ input[readonly], select[readonly] {
         <div class="field-error" id="login-error" style="text-align:center;margin-top:8px;">Invalid ID</div>
       </div>
       <button type="submit" class="login-btn">ENTER SYSTEM</button>
+      <button type="button" class="login-btn" style="background:transparent;border:1px solid var(--border);color:var(--muted);margin-top:10px;" onclick="handleGuestLogin()">VIEW DASHBOARD (GUEST ACCESS)</button>
     </form>
     <div class="login-footer">
       <div>Authorized Access Only. System logs are audited.</div>
@@ -1329,6 +1330,7 @@ input[readonly], select[readonly] {
             <th>COILS</th>
             <th>DELAY TIME</th>
             <th>DELAY DETAILS</th>
+            <th>ACTION</th>
           </tr>
         </thead>
         <tbody id="op-logs-tbody">
