@@ -236,18 +236,73 @@ async function loadSharedBackendData() {
   }
 }
 
+function getMinMaxDates(shifts) {
+  if (!shifts || shifts.length === 0) return null;
+  const dates = [];
+  shifts.forEach(s => {
+    if (s.date) {
+      const parts = s.date.split('.');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2], 10);
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) {
+          dates.push({ dateObj: d, dateStr: s.date });
+        }
+      }
+    }
+  });
+  if (dates.length === 0) return null;
+  dates.sort((a, b) => a.dateObj - b.dateObj);
+  return {
+    start: dates[0].dateStr,
+    end: dates[dates.length - 1].dateStr
+  };
+}
+
 function updateUCNCards(shifts) {
   const machines = ["SLITTER", "WCTL-1", "WCTL-2"];
   machines.forEach(machine => {
-    const count = shifts.filter(s => s.machine === machine).length;
-    const channelId = `ch-${machine.toLowerCase().replace(/-/g, '')}`;
+    const machineShifts = shifts.filter(s => s.machine === machine);
+    const count = machineShifts.length;
+    const key = machine.toLowerCase().replace(/-/g, '');
+    const channelId = `ch-${key}`;
     const channelDiv = document.getElementById(channelId);
-    if (channelDiv && count > 0) {
-      channelDiv.classList.add('loaded');
-      const countSpan = document.getElementById(`cnt-${machine.toLowerCase().replace(/-/g,'')}`);
-      if (countSpan) countSpan.textContent = count;
+    
+    if (channelDiv) {
+      const countSpan = document.getElementById(`cnt-${key}`);
+      const pillDiv = document.getElementById(`cnt-${key}-wrap`);
+      const hintDiv = document.getElementById(`hint-${key}`);
+      const datesDiv = document.getElementById(`dates-${key}`);
+      
+      if (count > 0) {
+        channelDiv.classList.add('loaded');
+        if (countSpan) countSpan.textContent = count;
+        if (pillDiv) pillDiv.style.display = 'flex';
+        if (hintDiv) hintDiv.style.display = 'block';
+        
+        // Calculate min/max dates
+        const dateRange = getMinMaxDates(machineShifts);
+        if (dateRange && datesDiv) {
+          datesDiv.textContent = `📅 ${dateRange.start} — ${dateRange.end}`;
+          datesDiv.style.display = 'block';
+        } else if (datesDiv) {
+          datesDiv.style.display = 'none';
+        }
+      } else {
+        channelDiv.classList.remove('loaded');
+        if (countSpan) countSpan.textContent = '0';
+        if (pillDiv) pillDiv.style.display = 'none';
+        if (hintDiv) hintDiv.style.display = 'none';
+        if (datesDiv) datesDiv.style.display = 'none';
+      }
     }
   });
+  
+  // Also update global count
+  const gc = document.getElementById('upload-global-count');
+  if (gc) gc.textContent = shifts.length.toLocaleString();
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -263,6 +318,26 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Load backend data
   await loadSharedBackendData();
+
+  if (window.RAW_DATA && window.RAW_DATA.length > 0) {
+    // Run anomaly detection
+    await runAnomalyDetection(window.RAW_DATA);
+    
+    // Automatically switch active tab/page from upload to overview
+    const uploadTab = document.querySelector('.tab[data-page="upload"]');
+    const overviewTab = document.querySelector('.tab[data-page="overview"]');
+    if (uploadTab && overviewTab) {
+      uploadTab.classList.remove('active');
+      overviewTab.classList.add('active');
+      
+      const uploadPage = document.getElementById('page-upload');
+      const overviewPage = document.getElementById('page-overview');
+      if (uploadPage && overviewPage) {
+        uploadPage.classList.remove('active');
+        overviewPage.classList.add('active');
+      }
+    }
+  }
 
   populateFilters();
   applyFilters();

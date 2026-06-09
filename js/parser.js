@@ -325,10 +325,14 @@ async function handleUpload(event, machine) {
     });
 
     // Update channel card UI
-    const channelDiv = document.getElementById(channelId);
-    if (channelDiv) channelDiv.classList.add('loaded');
-    const countSpan = document.getElementById(`cnt-${machine.toLowerCase().replace(/-/g,'')}`);
-    if (countSpan) countSpan.textContent = shifts.length;
+    if (typeof updateUCNCards === 'function') {
+      updateUCNCards(window.RAW_DATA);
+    } else {
+      const channelDiv = document.getElementById(channelId);
+      if (channelDiv) channelDiv.classList.add('loaded');
+      const countSpan = document.getElementById(`cnt-${machine.toLowerCase().replace(/-/g,'')}`);
+      if (countSpan) countSpan.textContent = shifts.length;
+    }
 
     statusDiv.innerHTML += `<br>✅ <span style="color:var(--accent3)">${machine}</span>: ${shifts.length} shifts loaded (${validRows} delay rows). Old ${machine} data replaced.`;
 

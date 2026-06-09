@@ -1210,6 +1210,7 @@ input[readonly], select[readonly] {
         <span id="cnt-slitter" style="font-family:var(--font-head)">0</span>
         <span style="font-size:10px;color:var(--muted)">shifts</span>
       </div>
+      <div class="ucn-dates" id="dates-slitter" style="display:none; font-family:var(--font-mono); font-size:11px; margin-top:8px; border:1px solid rgba(0,200,255,0.25); padding:4px 10px; border-radius:6px; background:rgba(0,200,255,0.05); color:var(--accent);"></div>
       <div class="ucn-reload-hint" id="hint-slitter" style="display:none">Click to re-upload</div>
     </label>
     <label for="inp-wctl1" id="ch-wctl1" class="upload-channel-new" data-machine="WCTL-1"
@@ -1226,6 +1227,7 @@ input[readonly], select[readonly] {
         <span id="cnt-wctl1" style="font-family:var(--font-head)">0</span>
         <span style="font-size:10px;color:var(--muted)">shifts</span>
       </div>
+      <div class="ucn-dates" id="dates-wctl1" style="display:none; font-family:var(--font-mono); font-size:11px; margin-top:8px; border:1px solid rgba(255,107,0,0.25); padding:4px 10px; border-radius:6px; background:rgba(255,107,0,0.05); color:var(--accent2);"></div>
       <div class="ucn-reload-hint" id="hint-wctl1" style="display:none">Click to re-upload</div>
     </label>
     <label for="inp-wctl2" id="ch-wctl2" class="upload-channel-new" data-machine="WCTL-2"
@@ -1242,6 +1244,7 @@ input[readonly], select[readonly] {
         <span id="cnt-wctl2" style="font-family:var(--font-head)">0</span>
         <span style="font-size:10px;color:var(--muted)">shifts</span>
       </div>
+      <div class="ucn-dates" id="dates-wctl2" style="display:none; font-family:var(--font-mono); font-size:11px; margin-top:8px; border:1px solid rgba(0,229,160,0.25); padding:4px 10px; border-radius:6px; background:rgba(0,229,160,0.05); color:var(--accent3);"></div>
       <div class="ucn-reload-hint" id="hint-wctl2" style="display:none">Click to re-upload</div>
     </label>
   </div>
@@ -1375,12 +1378,30 @@ const _uploadObserver=new MutationObserver(()=>{
     if(!cnt)return;
     const pill=document.getElementById('cnt-'+id+'-wrap');
     const hint=document.getElementById('hint-'+id);
+    const dates=document.getElementById('dates-'+id);
     if(cnt.textContent&&cnt.textContent!=='—'&&cnt.textContent!=='0'&&pill){
       pill.style.display='flex';
       if(hint)hint.style.display='block';
+      
+      if(window.RAW_DATA){
+        const machineName = id==='slitter'?'SLITTER':(id==='wctl1'?'WCTL-1':'WCTL-2');
+        const machineShifts = window.RAW_DATA.filter(s=>s.machine===machineName);
+        if(machineShifts.length>0&&typeof getMinMaxDates==='function'){
+          const range = getMinMaxDates(machineShifts);
+          if(range&&dates){
+            dates.textContent=`📅 ${range.start} — ${range.end}`;
+            dates.style.display='block';
+          }
+        }
+      }
+      
       const total=window.RAW_DATA?window.RAW_DATA.length:0;
       const gc=document.getElementById('upload-global-count');
       if(gc)gc.textContent=total.toLocaleString();
+    } else {
+      if(pill) pill.style.display='none';
+      if(hint) hint.style.display='none';
+      if(dates) dates.style.display='none';
     }
   });
 });
