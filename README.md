@@ -577,8 +577,8 @@ To ensure strict process control in a live plant, the application implements a r
 The system checks entered credentials against a secure list:
 * **Operator IDs (Pre-assigned to Lines)**:
   * `OP-SLIT-01` (SLITTER Operator)
-  * `OP-W1-01` (WCTL-1 Operator)
-  * `OP-W2-01` (WCTL-2 Operator)
+  * `OP-WCTL-01` (WCTL-1 Operator)
+  * `OP-WCTL-02` (WCTL-2 Operator)
 * **Admin IDs**:
   * `ADMIN01`, `ADMIN02`, `ADMIN03`, `ADMIN04`
 

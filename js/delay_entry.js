@@ -441,8 +441,8 @@ const MASTER_DELAY_MAP = {
 const LOGIN_CREDENTIALS = {
   // Operators
   "OP-SLIT-01": { role: "operator", line: "SLITTER" },
-  "OP-W1-01":   { role: "operator", line: "WCTL-1" },
-  "OP-W2-01":   { role: "operator", line: "WCTL-2" },
+  "OP-WCTL-01":   { role: "operator", line: "WCTL-1" },
+  "OP-WCTL-02":   { role: "operator", line: "WCTL-2" },
   // Admins
   "ADMIN01":    { role: "admin" },
   "ADMIN02":    { role: "admin" },
