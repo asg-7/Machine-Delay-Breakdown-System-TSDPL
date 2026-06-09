@@ -205,7 +205,7 @@ Let's look inside every single file and explain exactly what every function (cod
 - **What it does:** Gathers client data, formats it into a JSON packet, calls the Python API, and draws the Remaining Useful Life (RUL) prediction cards. **v2** adds 6 new features and renders classifier risk classes with probability bars.
 - **Code-Blocks:**
   - `buildRULPayload(machine, records)`: Computes **18 numerical features** (12 original + 6 new v2: `breakdown_streak`, `delay_acceleration`, `availability_trend`, `tonnage_efficiency`, `time_since_maintenance`, `breakdown_severity_avg`). Also uses expanded breakdown keywords including FAILURE, REPAIR, FAULT, TRIP.
-  - `fetchRULPrediction(payload)`: Performs a `POST` request to `http://localhost:8000/predict` with the calculated features.
+  - `fetchRULPrediction(payload)`: Performs a `POST` request to `https://tsdpl-api.onrender.com/predict` with the calculated features.
   - `renderRULCard(prediction, containerId)`: **v2**: Draws a RUL card with risk class badges (IMMINENT/SOON), probability distribution bars for each class, feature contribution bars, model version badge, and risk score indicator.
   - `renderRULPredictions()`: Filters active machines (only machines with uploaded data), shows a loading spinner, requests predictions, and hides empty cards.
 
@@ -336,7 +336,7 @@ $$\text{Risk Score} = \min\left(100, \frac{\text{Days since last breakdown}}{\te
 
 ## 🔌 6. API Reference (How Frontend & Backend Communicate)
 
-When the browser requests predictions, it calls these API endpoints on port `8000`:
+When the browser requests predictions, it calls these API endpoints on the hosted server `https://tsdpl-api.onrender.com`:
 
 ### RUL Predictor: `POST /predict` (v2 Dual Model)
 - **Request Body (JSON):**
@@ -473,12 +473,12 @@ Verify the anomaly detector tests run and pass:
 python ../anomaly_detector/test_anomaly_detector.py
 ```
 
-### Step 3: Start the Web Server
-Launch the FastAPI server:
+### Step 3: Start the Web Server (Optional for local testing)
+Launch the FastAPI server locally:
 ```bash
 python -m uvicorn api:app --host 127.0.0.1 --port 8000
 ```
-Keep this window open! The server is running at `http://127.0.0.1:8000`.
+Keep this window open! The server is running at `http://127.0.0.1:8000`. For production, the API is hosted at `https://tsdpl-api.onrender.com`.
 
 ### Step 4: Open the Dashboard
 Double-click `TSDPL_Dashboard.html` to open it in your browser.
@@ -491,7 +491,7 @@ Double-click `TSDPL_Dashboard.html` to open it in your browser.
 ## 🛠️ 8. Troubleshooting Common Issues
 
 - **RUL cards show "prediction unavailable" or "FastAPI server error":**
-  Make sure you started the FastAPI server (Step 3) and it is running on port `8000`. Note that the backend URL in the code is set to `http://127.0.0.1:8000` rather than `localhost` to bypass the Windows loopback bug (where browsers attempt IPv6 `[::1]` resolution while uvicorn binds to IPv4). Check the browser's console (F12 key → Console tab) for any red error messages.
+  Ensure the backend API at `https://tsdpl-api.onrender.com` (or local port `8000` if testing locally) is online and reachable. Note that Render free-tier web services automatically spin down after inactivity, so the first request might take 50-60 seconds to respond as the server spins back up. Check the browser's developer console (F12 key → Console tab) for details.
 - **Anomalies return a 503 error or a 422 error:**
   * A 503 error means the anomaly model is not trained yet (requires uploading at least 30 shifts).
   * A 422 validation error indicates a schema mismatch. This was resolved by implementing a mapper in the frontend (`js/app.js`) to translate the nested UI shift logs structure into the flat `ShiftRecord` schema required by the FastAPI server.

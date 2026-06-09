@@ -161,7 +161,7 @@ async function runAnomalyDetection(shiftRecords) {
       };
     });
 
-    const res = await fetch('http://127.0.0.1:8000/api/anomaly/detect', {
+    const res = await fetch('https://tsdpl-api.onrender.com/api/anomaly/detect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(mappedRecords)
