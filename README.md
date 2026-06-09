@@ -153,11 +153,14 @@ Let's look inside every single file and explain exactly what every function (cod
   - `setupNav()`: Listens for clicks on navigation tabs, switches pages, and triggers redraws.
   - `setupFilterEvents()`: Listens for clicks on the filter "APPLY" or "RESET" buttons and handles typing in the search box.
   - `runAnomalyDetection(shiftRecords)`: Sends the uploaded shift logs to the FastAPI server (`POST /api/anomaly/detect`) to flag any unusual shifts. It saves the results globally as `window.ANOMALY_RESULTS`.
+  - `getMinMaxDates(shifts)`: Parses shift dates to find the earliest (start) and latest (end) dates chronologically.
+  - `updateUCNCards(shifts)`: Refreshes upload cards with accurate shift counts and date ranges, toggling status badges and display states.
+  - `DOMContentLoaded` listener: Loads previously saved logs from backend server on page load, runs anomaly detection, and automatically switches active navigation to the **OVERVIEW** page if data exists.
 
 #### 5. [js/parser.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/parser.js)
 - **What it does:** The Excel translator. It uses the SheetJS library to convert Excel spreadsheet rows into clean JavaScript objects.
 - **Code-Blocks:**
-  - `handleUpload(event, machine)`: Fired when you select or drop a file. It resets the input field, parses the spreadsheet, reads the first 10 rows to detect headers (like Date, Shift, Tonnage, Coils), maps columns, and merges data into `RAW_DATA`.
+  - `handleUpload(event, machine)`: Fired when you select or drop a file. It resets the input field, parses the spreadsheet, reads the first 10 rows to detect headers (like Date, Shift, Tonnage, Coils), maps columns, merges data into `RAW_DATA`, and updates card date ranges and counts.
   - **Date Normalization Block (lines 116-191):** Standardizes multiple date formats (Excel serial numbers, dots, dashes, slashes) into a clean `DD.MM.YYYY` format so the system doesn't duplicate entries.
   - **Shift Aggregator Block (lines 211-232):** Combines multiple spreadsheet rows belonging to the same shift into a single shift record containing a list of delays.
   - **Date Warning Checker (lines 238-252):** Flags rows with suspicious dates (like pre-year-2000 or future dates).
@@ -593,5 +596,26 @@ When an admin logs in:
 * This tab queries `GET /api/operator-logs` to show a searchable table of all submissions, indicating who inputted what, when (server timestamp), tonnage, and individual downtime details.
 * Admins can download the compiled log database as a CSV for reporting.
 * All operator entries automatically merge into `window.RAW_DATA` on page load, dynamically feeding the Overview, Delay Analysis, and Pareto graphs.
+
+
+---
+
+## 💾 12. Data Persistence & Date Range Visualization
+
+To improve usability and eliminate repetitive work for administrators, the system includes native server-side persistence and real-time visualization:
+
+### 1. Shift Date Range Visualization
+When data is loaded or uploaded, the main upload card displays the specific date range covered by the shifts:
+* **Date Range Computation**: Automatically parsed from `RAW_DATA` and displayed as `📅 Start Date — End Date` (e.g. `📅 01.10.2025 — 04.10.2025`).
+* **Visual Styling**: Each card features a custom, themed glassmorphism badge matching the color code of the machine:
+  * **SLITTER**: Cyan badge.
+  * **WCTL-1**: Orange badge.
+  * **WCTL-2**: Mint-green badge.
+
+### 2. Auto-Load Persistence across Sessions
+When an admin opens the dashboard:
+* **Background Sync**: The app automatically makes a `GET` request to the backend server `/api/get-data`.
+* **Zero-config Load**: If data has been previously uploaded, it is restored into memory, anomaly detection is executed, and the user is redirected straight to the **OVERVIEW** tab populated with stats.
+* **Fallback**: Works offline gracefully via local in-memory simulation.
 
 
