@@ -95,6 +95,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Self-Ping Keep-Alive Daemon Thread ────────
+import threading
+import time
+import urllib.request
+
+def self_ping_worker():
+    # Delay first ping to allow server startup
+    time.sleep(30)
+    url = "https://tsdpl-api.onrender.com/health"
+    while True:
+        try:
+            print(f"[keep-alive] Pinging self: {url}")
+            req = urllib.request.Request(
+                url, 
+                headers={"User-Agent": "TSDPL-KeepAlive-Daemon/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=15) as response:
+                status = response.getcode()
+                print(f"[keep-alive] Success, status code: {status}")
+        except Exception as e:
+            print(f"[keep-alive] Error pinging self: {e}")
+        # 14 minutes = 840 seconds
+        time.sleep(840)
+
+@app.on_event("startup")
+def start_self_ping():
+    # Run as a daemon thread so it exits when the main process exits
+    threading.Thread(target=self_ping_worker, daemon=True).start()
+
+
 # ── Mount anomaly detection module ────────────
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
