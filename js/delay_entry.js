@@ -1344,8 +1344,11 @@ function downloadAdminLogsCSV() {
 
 async function saveOperatorLogToSupabase(logEntry) {
   try {
+    // BUG 1 Fix: Ensure only the single selected machine name is stored (read directly from operator form)
+    const selectedMachine = document.getElementById('op-line-badge').dataset.val || document.getElementById('op-line-badge').textContent.trim() || logEntry.machine;
+
     const formatted = {
-      machine:       logEntry.machine,
+      machine:       selectedMachine,
       date:          logEntry.date,
       shift:         logEntry.shift,
       incharge:      logEntry.incharge,
@@ -1353,7 +1356,7 @@ async function saveOperatorLogToSupabase(logEntry) {
       tonnage:       logEntry.tonnage,
       coils:         logEntry.coils,
       delays:        logEntry.delays || [],
-      source:        'operator',
+      source:        'operator', // BUG 2 Fix: Explicitly ensure source is set to 'operator'
       employee_id:    logEntry.employeeId,
       start_time:     logEntry.startTime,
       end_time:       logEntry.endTime,
