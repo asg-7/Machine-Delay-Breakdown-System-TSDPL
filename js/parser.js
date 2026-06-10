@@ -314,7 +314,7 @@ async function handleUpload(event, machine) {
     window.RAW_DATA.push(...shifts);
 
     // Persist parsed data to backend for global sharing
-    fetch(`https://tsdpl-api.onrender.com/api/upload-data?machine=${encodeURIComponent(machine)}`, {
+    fetch(`https://machine-delay-breakdown-system-tsdpl.onrender.com/api/upload-data?machine=${encodeURIComponent(machine)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(shifts)

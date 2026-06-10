@@ -7,7 +7,7 @@
  * Depends on: AppState (Phase 4), your existing KPI helpers in analytics.js
  */
 
-const RUL_API_BASE = "https://tsdpl-api.onrender.com";   // change to deployed URL in production
+const RUL_API_BASE = "https://machine-delay-breakdown-system-tsdpl.onrender.com";   // change to deployed URL in production
 
 // ──────────────────────────────────────────────
 // 1. BUILD PAYLOAD FROM AppState

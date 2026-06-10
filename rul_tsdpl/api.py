@@ -103,7 +103,7 @@ import urllib.request
 def self_ping_worker():
     # Delay first ping to allow server startup
     time.sleep(30)
-    url = "https://tsdpl-api.onrender.com/health"
+    url = "https://machine-delay-breakdown-system-tsdpl.onrender.com/health"
     while True:
         try:
             print(f"[keep-alive] Pinging self: {url}")
