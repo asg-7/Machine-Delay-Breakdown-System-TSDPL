@@ -67,6 +67,9 @@ TSDPL_DELAY2/
 ├── README.md                            # THIS FILE - The ultimate simple manual.
 ├── commit-and-push.bat                  # A shortcut script to save and backup changes to Git.
 ├── .gitignore                           # Excludes local runtime folders and Python caches.
+├── .python-version                      # Sets local Python version to 3.11.9 for environment alignment.
+├── requirements.txt                     # Pins Python dependencies (scikit-learn==1.5.2) globally.
+├── vercel.json                          # Configures URL rewrites to TSDPL_Dashboard.html for Vercel deployment.
 │
 ├── css/
 │   └── style.css                        # The style guide (colors, layouts, and dark-theme looks).
@@ -79,12 +82,13 @@ TSDPL_DELAY2/
 │   ├── charts.js                        # The artist that builds Chart.js graphs.
 │   ├── analytics.js                     # The mathematician that calculates KPIs and draws pages.
 │   ├── rul_client.js                    # The messenger that requests RUL predictions from Python.
-│   └── delay_entry.js                   # Handles operator logs entry, validation, and login.
+│   └── delay_entry.js                   # Handles operator logs entry, validation, login, and guest access.
 │
 ├── rul_tsdpl/                           # RUL Prediction Brain (Python Backend) — v2 Dual Model
 │   ├── api.py                           # The web server that hosts the RUL, Anomaly, and Persistence APIs.
 │   ├── feature_engineering.py           # v2: Shift-level features (19 total) with risk classification.
 │   ├── train.py                         # v2: Trains dual models — Classifier (SMOTE) + Regressor (log-transform).
+│   ├── requirements.txt                 # Pins dependencies (scikit-learn==1.5.2) for the RUL module.
 │   ├── rul_classifier_v2.pkl            # The saved Risk Classifier brain (GradientBoostingClassifier).
 │   ├── rul_regressor_v2.pkl             # The saved RUL Regressor brain (GradientBoostingRegressor, log-space).
 │   ├── rul_model_meta_v2.json           # v2 metadata: classification report, confusion matrix, importances.
@@ -94,7 +98,7 @@ TSDPL_DELAY2/
 │   └── rul_model_meta.json              # Legacy v1 metadata (backward compat, auto-updated by train.py).
 │
 ├── anomaly_detector/                    # Shift Anomaly Brain (Python Backend)
-│   ├── requirements.txt                 # List of Python packages needed for anomalies.
+│   ├── requirements.txt                 # List of Python packages (scikit-learn==1.5.2) needed for anomalies.
 │   ├── feature_engineering.py           # Prepares 27 special features from shift records.
 │   ├── anomaly_detector.py              # The Isolation Forest model that flags weird shifts.
 │   ├── api_router.py                    # The API endpoint router mounted onto the main server.
@@ -139,6 +143,16 @@ Let's look inside every single file and explain exactly what every function (cod
   - **Variables (`:root`):** Sets up the color palette (vibrant cyan, orange, green, yellow, red, and slate backgrounds) and fonts (Rajdhani, Barlow, JetBrains Mono).
   - **Layout & Cards (`.card`, `.kpi`):** Creates glowing containers, glassmorphism borders, and animated indicators.
   - **Pills & Badges (`.pill-a`, `.pill-b`, etc.):** Colors shift letters (A, B, C) and delay statuses so they are easy to scan.
+
+#### 3. [requirements.txt](file:///c:/TSDPL/week5/TSDPL_DELAY2/requirements.txt)
+- **What it does:** Root Python requirements file. Pins `scikit-learn==1.5.2` and other dependency versions globally to ensure local training matches production Render hosting environment.
+- **Contents:** `scikit-learn==1.5.2`, `pandas>=2.0.0`, `numpy>=1.26.0`, `joblib>=1.3.0`, `fastapi>=0.110.0`, `pydantic>=2.0.0`, `uvicorn>=0.27.0`, `imbalanced-learn>=0.12.0`, `openpyxl>=3.1.0`.
+
+#### 4. [.python-version](file:///c:/TSDPL/week5/TSDPL_DELAY2/.python-version)
+- **What it does:** Sets the virtualenv or tool-chain Python version to `3.11.9`.
+
+#### 5. [vercel.json](file:///c:/TSDPL/week5/TSDPL_DELAY2/vercel.json)
+- **What it does:** Configures routing rewrites on Vercel to route all subpaths back to `TSDPL_Dashboard.html` for smooth client-side single page app transitions.
 
 ---
 
@@ -210,15 +224,18 @@ Let's look inside every single file and explain exactly what every function (cod
   - `renderRULPredictions()`: Filters active machines (only machines with uploaded data), shows a loading spinner, requests predictions, and hides empty cards.
 
 #### 10. [js/delay_entry.js](file:///c:/TSDPL/week5/TSDPL_DELAY2/js/delay_entry.js)
-- **What it does:** Logic controller for the Operator Delay Entry Terminal, managing form creation, login gating, dynamic dropdown loading, alphanumeric validation, database integration, and log persistence.
+- **What it does:** Logic controller for the Operator Delay Entry Terminal, managing form creation, login gating, dynamic dropdown loading, alphanumeric validation, database integration, role-based view updates, and log persistence.
 - **Code-Blocks:**
   - `getISTDateTime()`: Calculates the current Date and Shift (Shift A: 06:00-14:00, Shift B: 14:00-22:00, Shift C: 22:00-06:00 IST) based on the system clock.
   - `handleLogin(event)`: Validates credentials and gates dashboard view by user role (Operator or Admin).
+  - `handleGuestLogin()`: Sets guest session data and gates the dashboard for view-only guest access.
+  - `applyUserRole(user)`: Controls sidebar/tab visibility depending on role (Admins see Operator Logs and upload/configuration panels, Operators see the locked Delay Entry Terminal, Guests see view-only dashboard reports without database insertion/audit tools).
   - `setupOperatorForm(line)`: Pre-fills and locks the machine line selection and auto-sets the read-only Date and Shift.
   - `addOperatorDelayEntry()`: Appends a new delay log entry row with cascading selects dynamically loaded from Sheet 3 reference data for the operator's line.
   - `submitOperatorForm()`: Checks for duplicates in Supabase to guard against double-submits, validates inputs (non-negative tonnage/coils, positive minutes, alphanumeric-only description for "OTHER" reasons), posts to the local backend, saves locally in `localStorage`, inserts the log record into Supabase via `saveOperatorLogToSupabase(logEntry)`, and opens the Export modal.
   - `saveOperatorLogToSupabase(logEntry)`: Formats the operator log entry and performs an insert query to the `delay_logs` table in Supabase.
-  - `loadAdminLogs()`: Fetches operator logs to render a unified audit table in the Admin panel.
+  - `loadAdminLogs()`: Fetches operator logs from Supabase (source `'operator'`) or loads from `localStorage` fallback to render a unified audit table in the Admin panel.
+  - `promoteOperatorLog(logId)`: Promotes a logged operator entry in Supabase to official file data by updating its `source` to `'excel'` so it automatically aggregates into long-term history.
 
 ---
 
@@ -456,10 +473,11 @@ When the browser requests predictions, it calls these API endpoints on the hoste
 Follow these simple steps to run the project on your machine:
 
 ### Step 1: Install Python Dependencies
-Open your Command Prompt (cmd) or PowerShell, go to the project directory, and run:
+Make sure you are using Python 3.11.x (as configured in `.python-version`). Open your Command Prompt (cmd) or PowerShell, navigate to the project directory, and install the pinned dependencies:
 ```bash
-pip install pandas openpyxl scikit-learn fastapi uvicorn joblib imbalanced-learn
+pip install -r requirements.txt
 ```
+This ensures scikit-learn is installed at version `1.5.2` (and `imbalanced-learn` at `0.12.0`) to prevent model loading and unpickling version mismatches.
 
 ### Step 2: Train the AI Models (One-Time Setup)
 To build the v2 shift-level training table and train the dual RUL classifier + regressor:
@@ -495,6 +513,8 @@ Double-click `TSDPL_Dashboard.html` to open it in your browser.
 - **Anomalies return a 503 error or a 422 error:**
   * A 503 error means the anomaly model is not trained yet (requires uploading at least 30 shifts).
   * A 422 validation error indicates a schema mismatch. This was resolved by implementing a mapper in the frontend (`js/app.js`) to translate the nested UI shift logs structure into the flat `ShiftRecord` schema required by the FastAPI server.
+- **`scikit-learn` version mismatch / Model unpickling errors:**
+  If local retraining or model loading on Render causes pickle/unpickling errors, verify that both environments use `scikit-learn==1.5.2` and Python `3.11.x`. The project pins the scikit-learn version in the `requirements.txt` files and sets the Python version to `3.11.9` in `.python-version`.
 - **WCTL-2 data is missing or not displaying when both WCTL-1 and WCTL-2 files are uploaded:**
   This was resolved by removing a hard coding limit (`allDelays.length < 200` and `maintEvents.length < 200`) in `js/analytics.js` which caused WCTL-2 rows to be silently ignored if WCTL-1 data already filled the array slots.
 - **Excel file fails to upload or parse:**
@@ -664,6 +684,46 @@ window.supabase
   })
   .subscribe();
 ```
+
+---
+
+## 🚀 14. Frontend Deployment to Vercel
+
+The frontend dashboard can be easily deployed to Vercel for cloud hosting. The repository includes [vercel.json](file:///c:/TSDPL/week5/TSDPL_DELAY2/vercel.json) to handle URL routing.
+
+### Vercel Routing Configuration
+Since the dashboard operates as a client-side Single Page Application (SPA), Vercel must route all incoming browser requests back to `TSDPL_Dashboard.html` so that routing is handled internally:
+```json
+{
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/TSDPL_Dashboard.html" }
+  ]
+}
+```
+
+### Steps to Deploy:
+1. Install Vercel CLI: `npm install -g vercel`
+2. Run `vercel` in the project root directory.
+3. Link to your project and configure settings.
+4. Access your live web application link provided by Vercel!
+
+---
+
+## ☁️ 15. Python Backend Deployment to Render
+
+The FastAPI server hosting the RUL and Anomaly Detection AI models is deployed to **Render** at `https://tsdpl-api.onrender.com`.
+
+### Environment Alignment
+Render is configured to run with:
+* **Python Version**: `3.11.9` (auto-detected via the `.python-version` file at the root)
+* **Dependencies**: Installed from the root `requirements.txt`, which forces `scikit-learn==1.5.2` and `imbalanced-learn==0.12.0` to match the exact versions used for local model training.
+
+### Render Deployment Configuration:
+1. Create a new **Web Service** on Render linked to the GitHub repository.
+2. Set **Runtime** to `Python 3`.
+3. Set the **Build Command**: `pip install -r requirements.txt`
+4. Set the **Start Command**: `python -m uvicorn api:app --host 0.0.0.0 --port $PORT`
+5. Enable automated builds or trigger manual deploys when committing changes to `main`.
 
 
 
