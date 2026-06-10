@@ -354,6 +354,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   setInterval(updateClock, 1000);
   updateClock();
 
+  // Pre-load admin operator logs on startup so the table is ready
+  if (typeof loadAdminLogs === 'function') {
+    loadAdminLogs();
+  }
+
   // Set up Supabase Realtime channel subscription
   if (window.supabase) {
     window.supabase
@@ -365,8 +370,13 @@ window.addEventListener('DOMContentLoaded', async () => {
       }, (payload) => {
         console.log('New database change received:', payload);
         if (window._supabaseDebounceTimer) clearTimeout(window._supabaseDebounceTimer);
-        window._supabaseDebounceTimer = setTimeout(() => {
-          loadFromSupabase();
+        window._supabaseDebounceTimer = setTimeout(async () => {
+          await loadFromSupabase();
+          // Also refresh the admin operator logs table if visible
+          const opLogsTab = document.querySelector('.tab[data-page="operator-logs"]');
+          if (typeof loadAdminLogs === 'function' && opLogsTab && opLogsTab.classList.contains('active')) {
+            loadAdminLogs();
+          }
         }, 1000);
       })
       .subscribe((status) => {
