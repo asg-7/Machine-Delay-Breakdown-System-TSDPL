@@ -435,7 +435,7 @@ function renderProduction(){
       label:m,data:dates.map(dt=>dateMap[dt]?.[m]||0),
       backgroundColor:MCOLORS[m]+'99',borderColor:MCOLORS[m],borderWidth:1,
     }))},
-    options:{...baseOpts(),scales:{...baseOpts().scales,x:{...baseOpts().scales.x,stacked:true},y:{...baseOpts().scales.y,stacked:true}}}
+    options:{...baseOpts(),scales:{...baseOpts().scales,x:{...baseOpts().scales.x,stacked:false},y:{...baseOpts().scales.y,stacked:false}}}
   });
 
   // Shift compare
