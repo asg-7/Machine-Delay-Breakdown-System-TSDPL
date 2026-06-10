@@ -166,6 +166,18 @@ async function handleUpload(event, machine) {
       let date = rawDate;
       let dateValid = true;
 
+      // Helper to repair truncated year strings from Excel corruption
+      // '26' → '2026', '025' → '2025', '202' → '2020'
+      function _repairYear(y) {
+        y = String(y).trim();
+        if (y.length <= 2) return '20' + y.padStart(2, '0');        // '26' → '2026', '6' → '2006'
+        if (y.length === 3) {
+          if (y.startsWith('0'))  return '2' + y;                   // '025' → '2025'
+          return y + '0';                                           // '202' → '2020'
+        }
+        return y;
+      }
+
       if (typeof date === 'number') {
         // Excel serial date — use SheetJS decoder (always reliable for >= 1900 serials)
         const pd = XLSX.SSF.parse_date_code(date);
@@ -189,14 +201,15 @@ async function handleUpload(event, machine) {
           // Could be DD.MM.YYYY or DD.MM.YY
           if (p.length === 3) {
             [dd, mm, yy] = p;
-            if (yy.length === 2) yy = '20' + yy;   // 26 → 2026
+            // Repair truncated years: '025' → '2025', '26' → '2026', '202' → '2026'
+            if (yy.length < 4) yy = _repairYear(yy);
           }
         } else if (date.includes('/')) {
           const p = date.split('/');
           if (p.length === 3) {
             // Assume DD/MM/YYYY (Indian standard)
             [dd, mm, yy] = p;
-            if (yy.length === 2) yy = '20' + yy;
+            if (yy.length < 4) yy = _repairYear(yy);
           }
         } else if (date.includes('-')) {
           const p = date.split('-');
@@ -207,7 +220,7 @@ async function handleUpload(event, machine) {
             } else {
               // DD-MM-YYYY
               [dd, mm, yy] = p;
-              if (yy.length === 2) yy = '20' + yy;
+              if (yy.length < 4) yy = _repairYear(yy);
             }
           }
         }
@@ -484,18 +497,27 @@ async function uploadExcelToSupabase(shifts, machine) {
       return;
     }
 
-    // 2. Format new shifts
-    const formatted = shifts.map(row => ({
-      machine:       machine,
-      date:          row.date,
-      shift:         row.shift,
-      incharge:      row.incharge,
-      team:          row.team,
-      tonnage:       row.tonnage,
-      coils:         row.coils,
-      delays:        row.delays || [],
-      source:        'excel'
-    }));
+    // 2. Format new shifts — convert DD.MM.YYYY → YYYY-MM-DD for Supabase
+    const formatted = shifts.map(row => {
+      let isoDate = row.date;
+      if (row.date && row.date.includes('.')) {
+        const parts = row.date.split('.');
+        if (parts.length === 3) {
+          isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`; // YYYY-MM-DD
+        }
+      }
+      return {
+        machine:       machine,
+        date:          isoDate,
+        shift:         row.shift,
+        incharge:      row.incharge,
+        team:          row.team,
+        tonnage:       row.tonnage,
+        coils:         row.coils,
+        delays:        row.delays || [],
+        source:        'excel'
+      };
+    });
 
     // 3. Batch insert in chunks of 200
     const chunkSize = 200;

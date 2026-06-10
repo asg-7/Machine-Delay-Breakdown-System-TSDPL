@@ -1347,9 +1347,18 @@ async function saveOperatorLogToSupabase(logEntry) {
     // BUG 1 Fix: Ensure only the single selected machine name is stored (read directly from operator form)
     const selectedMachine = document.getElementById('op-line-badge').dataset.val || document.getElementById('op-line-badge').textContent.trim() || logEntry.machine;
 
+    // Convert DD.MM.YYYY → YYYY-MM-DD for Supabase date column
+    let isoDate = logEntry.date;
+    if (logEntry.date && logEntry.date.includes('.')) {
+      const parts = logEntry.date.split('.');
+      if (parts.length === 3) {
+        isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+
     const formatted = {
       machine:       selectedMachine,
-      date:          logEntry.date,
+      date:          isoDate,
       shift:         logEntry.shift,
       incharge:      logEntry.incharge,
       team:          logEntry.team,

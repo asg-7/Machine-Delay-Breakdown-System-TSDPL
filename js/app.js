@@ -265,21 +265,29 @@ async function loadFromSupabase() {
     if (error) throw error;
 
     if (Array.isArray(data)) {
-      window.RAW_DATA = data.map(row => ({
-        machine:       row.machine,
-        date:          row.date,
-        shift:         row.shift,
-        incharge:      row.incharge,
-        team:          row.team,
-        tonnage:       parseFloat(row.tonnage) || 0,
-        coils:         parseInt(row.coils) || 0,
-        delays:        row.delays || [],
-        source:        row.source,
-        employeeId:    row.employee_id,
-        startTime:     row.start_time,
-        endTime:       row.end_time,
-        timestamp:     row.timestamp
-      }));
+      window.RAW_DATA = data.map(row => {
+        // Convert YYYY-MM-DD (Supabase) back to DD.MM.YYYY (frontend format)
+        let displayDate = row.date;
+        if (row.date && /^\d{4}-\d{2}-\d{2}$/.test(row.date)) {
+          const [y, m, d] = row.date.split('-');
+          displayDate = `${d}.${m}.${y}`;
+        }
+        return {
+          machine:       row.machine,
+          date:          displayDate,
+          shift:         row.shift,
+          incharge:      row.incharge,
+          team:          row.team,
+          tonnage:       parseFloat(row.tonnage) || 0,
+          coils:         parseInt(row.coils) || 0,
+          delays:        row.delays || [],
+          source:        row.source,
+          employeeId:    row.employee_id,
+          startTime:     row.start_time,
+          endTime:       row.end_time,
+          timestamp:     row.timestamp
+        };
+      });
       console.log(`Loaded ${window.RAW_DATA.length} records from Supabase.`);
       
       // Update local card UI
