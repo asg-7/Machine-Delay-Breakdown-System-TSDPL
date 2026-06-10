@@ -365,6 +365,106 @@ async function handleUpload(event, machine) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+//  Per-Line Upload & Sync  –  Orchestrator
+// ─────────────────────────────────────────────────────────────
+
+function _pluId(machine) {
+  return machine.toLowerCase().replace(/-/g, '');
+}
+
+async function perLineUpload(machine) {
+  const id       = _pluId(machine);
+  const fileInput = document.getElementById('plu-file-' + id);
+  const btn       = document.getElementById('plu-btn-' + id);
+  const msgDiv    = document.getElementById('plu-msg-' + id);
+
+  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+    if (msgDiv) { msgDiv.innerHTML = '<span style="color:var(--danger)">⚠ No file selected.</span>'; }
+    return;
+  }
+
+  const file = fileInput.files[0];
+
+  // Show loading state
+  btn.classList.add('loading');
+  btn.disabled = true;
+  if (msgDiv) msgDiv.innerHTML = '<span style="color:var(--accent4)">⏳ Parsing & uploading…</span>';
+
+  try {
+    // Synthesise a change-event-like object compatible with handleUpload
+    const syntheticEvent = { target: { files: [file], value: '' } };
+    await handleUpload(syntheticEvent, machine);
+
+    // Count the shifts for this machine in RAW_DATA after upload
+    const machineShifts = (window.RAW_DATA || []).filter(s => s.machine === machine);
+    const count = machineShifts.length;
+
+    if (msgDiv) {
+      msgDiv.innerHTML = `<span style="color:var(--accent3)">✅ ${machine} data synced — ${count} rows uploaded</span>`;
+    }
+
+    // Refresh last-sync timestamp
+    await fetchLastSyncTime(machine, id);
+
+  } catch (err) {
+    console.error('Per-line upload error:', err);
+    if (msgDiv) {
+      msgDiv.innerHTML = `<span style="color:var(--danger)">❌ Upload failed: ${err.message}</span>`;
+    }
+  } finally {
+    btn.classList.remove('loading');
+    // Reset file input so the same file can be re-selected
+    fileInput.value = '';
+    const label = document.getElementById('plu-label-' + id);
+    if (label) {
+      label.textContent = '📎 Choose .xlsx file…';
+      label.classList.remove('has-file');
+    }
+    btn.disabled = true;
+  }
+}
+
+async function fetchLastSyncTime(machine, id) {
+  const statusDiv = document.getElementById('plu-status-' + id);
+  if (!statusDiv) return;
+
+  try {
+    // Query the max created_at timestamp for excel-sourced rows of this machine
+    // Supabase doesn't have a direct max() shorthand, so we order desc + limit 1
+    const { data, error } = await window.supabase
+      .from('delay_logs')
+      .select('created_at')
+      .eq('machine', machine)
+      .eq('source', 'excel')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+
+    if (data && data.length > 0 && data[0].created_at) {
+      const ts = new Date(data[0].created_at);
+      const formatted = ts.toLocaleString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true
+      });
+      statusDiv.className = 'plu-status synced';
+      statusDiv.innerHTML = `<span class="plu-dot"></span><span class="plu-status-text">Last synced: ${formatted}</span>`;
+    } else {
+      statusDiv.className = 'plu-status';
+      statusDiv.innerHTML = '<span class="plu-dot"></span><span class="plu-status-text">No data synced yet</span>';
+    }
+  } catch (err) {
+    console.warn('fetchLastSyncTime error for ' + machine + ':', err);
+    statusDiv.className = 'plu-status error';
+    statusDiv.innerHTML = '<span class="plu-dot"></span><span class="plu-status-text">Could not check sync status</span>';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  uploadExcelToSupabase  –  Batch insert to Supabase
+// ─────────────────────────────────────────────────────────────
+
 async function uploadExcelToSupabase(shifts, machine) {
   const statusDiv = document.getElementById('upload-status');
   const originalHtml = statusDiv.innerHTML;

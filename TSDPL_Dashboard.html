@@ -480,9 +480,152 @@ tr:hover td { background: rgba(0,200,255,.03); }
 .ucn-checkmark { color: var(--accent3); font-size: 14px; }
 .ucn-reload-hint { font-size: 10px; color: var(--muted); margin-top: 8px; letter-spacing: .06em; }
 
+/* ── PER-LINE UPLOAD & SYNC SECTIONS ── */
+.plu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+.plu-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 18px 18px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .2s, box-shadow .2s;
+}
+.plu-card:hover {
+  border-color: var(--plu-color, var(--accent));
+  box-shadow: 0 0 20px color-mix(in srgb, var(--plu-color, var(--accent)) 12%, transparent);
+}
+.plu-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--plu-color, var(--accent));
+  border-radius: 10px 10px 0 0;
+}
+.plu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.plu-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  background: color-mix(in srgb, var(--plu-color, var(--accent)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--plu-color, var(--accent)) 25%, transparent);
+  flex-shrink: 0;
+}
+.plu-name {
+  font-family: var(--font-head);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--plu-color, var(--accent));
+}
+.plu-sub {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .06em;
+}
+.plu-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.plu-file-label {
+  flex: 1;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.plu-file-label:hover {
+  border-color: var(--plu-color, var(--accent));
+  color: var(--text);
+}
+.plu-file-label.has-file {
+  border-style: solid;
+  border-color: var(--plu-color, var(--accent));
+  color: var(--text);
+}
+.plu-sync-btn {
+  background: var(--plu-color, var(--accent));
+  color: #000;
+  border: none;
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity .2s, transform .15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.plu-sync-btn:hover { opacity: .88; transform: translateY(-1px); }
+.plu-sync-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  transform: none;
+}
+.plu-sync-btn .plu-spinner {
+  display: none;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(0,0,0,.2);
+  border-top: 2px solid #000;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+.plu-sync-btn.loading .plu-spinner { display: inline-block; }
+.plu-sync-btn.loading .plu-btn-text { display: none; }
+.plu-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .04em;
+  min-height: 18px;
+}
+.plu-status .plu-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.plu-status.synced .plu-dot { background: var(--accent3); }
+.plu-status.error .plu-dot { background: var(--danger); }
+.plu-msg {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-height: 16px;
+  transition: opacity .3s;
+}
+
 /* ── RESPONSIVE ── */
 @media (max-width: 900px) {
-  .g2, .g3, .g12 { grid-template-columns: 1fr; }
+  .g2, .g3, .g12, .plu-grid { grid-template-columns: 1fr; }
   .filters { gap: 8px; }
 select, input[type="text"] { min-width: 120px; }
 }
@@ -1291,6 +1434,92 @@ input[readonly], select[readonly] {
     </label>
   </div>
 
+  <!-- ═══════════════ PER-LINE UPLOAD & SYNC ═══════════════ -->
+  <div style="background:linear-gradient(135deg,rgba(255,107,43,.05),rgba(255,217,74,.04));border:1px solid rgba(255,107,43,.15);border-radius:10px;padding:16px 24px;margin-top:24px;display:flex;align-items:center;gap:16px;">
+    <div style="font-size:24px;line-height:1;">🔄</div>
+    <div>
+      <div style="font-family:var(--font-head);font-size:13px;color:var(--text);letter-spacing:.05em;margin-bottom:2px;">SHARED DASHBOARD SYNC</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.5;">Upload Excel files per production line. Data is synced to Supabase so all dashboard users see the same data in real-time.</div>
+    </div>
+  </div>
+
+  <div class="plu-grid">
+    <!-- SLITTER -->
+    <div class="plu-card" style="--plu-color: var(--accent);">
+      <div class="plu-bar"></div>
+      <div class="plu-header">
+        <div class="plu-icon">⚙</div>
+        <div>
+          <div class="plu-name">SLITTER</div>
+          <div class="plu-sub">Production Line</div>
+        </div>
+      </div>
+      <input type="file" id="plu-file-slitter" accept=".xlsx" style="display:none" />
+      <div class="plu-file-row">
+        <div class="plu-file-label" id="plu-label-slitter" onclick="document.getElementById('plu-file-slitter').click()">📎 Choose .xlsx file…</div>
+        <button class="plu-sync-btn" id="plu-btn-slitter" onclick="perLineUpload('SLITTER')" disabled>
+          <span class="plu-spinner"></span>
+          <span class="plu-btn-text">UPLOAD &amp; SYNC</span>
+        </button>
+      </div>
+      <div class="plu-status" id="plu-status-slitter">
+        <span class="plu-dot"></span>
+        <span class="plu-status-text">Checking last sync…</span>
+      </div>
+      <div class="plu-msg" id="plu-msg-slitter"></div>
+    </div>
+
+    <!-- WCTL-1 -->
+    <div class="plu-card" style="--plu-color: var(--accent2);">
+      <div class="plu-bar"></div>
+      <div class="plu-header">
+        <div class="plu-icon">🏭</div>
+        <div>
+          <div class="plu-name">WCTL-1</div>
+          <div class="plu-sub">Production Line</div>
+        </div>
+      </div>
+      <input type="file" id="plu-file-wctl1" accept=".xlsx" style="display:none" />
+      <div class="plu-file-row">
+        <div class="plu-file-label" id="plu-label-wctl1" onclick="document.getElementById('plu-file-wctl1').click()">📎 Choose .xlsx file…</div>
+        <button class="plu-sync-btn" id="plu-btn-wctl1" onclick="perLineUpload('WCTL-1')" disabled>
+          <span class="plu-spinner"></span>
+          <span class="plu-btn-text">UPLOAD &amp; SYNC</span>
+        </button>
+      </div>
+      <div class="plu-status" id="plu-status-wctl1">
+        <span class="plu-dot"></span>
+        <span class="plu-status-text">Checking last sync…</span>
+      </div>
+      <div class="plu-msg" id="plu-msg-wctl1"></div>
+    </div>
+
+    <!-- WCTL-2 -->
+    <div class="plu-card" style="--plu-color: var(--accent3);">
+      <div class="plu-bar"></div>
+      <div class="plu-header">
+        <div class="plu-icon">🔧</div>
+        <div>
+          <div class="plu-name">WCTL-2</div>
+          <div class="plu-sub">Production Line</div>
+        </div>
+      </div>
+      <input type="file" id="plu-file-wctl2" accept=".xlsx" style="display:none" />
+      <div class="plu-file-row">
+        <div class="plu-file-label" id="plu-label-wctl2" onclick="document.getElementById('plu-file-wctl2').click()">📎 Choose .xlsx file…</div>
+        <button class="plu-sync-btn" id="plu-btn-wctl2" onclick="perLineUpload('WCTL-2')" disabled>
+          <span class="plu-spinner"></span>
+          <span class="plu-btn-text">UPLOAD &amp; SYNC</span>
+        </button>
+      </div>
+      <div class="plu-status" id="plu-status-wctl2">
+        <span class="plu-dot"></span>
+        <span class="plu-status-text">Checking last sync…</span>
+      </div>
+      <div class="plu-msg" id="plu-msg-wctl2"></div>
+    </div>
+  </div>
+
   <div class="card" style="margin-top:20px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <div class="card-title" style="margin:0;">UPLOAD STATUS LOG</div>
@@ -1453,6 +1682,36 @@ document.addEventListener('DOMContentLoaded',()=>{
     const el=document.getElementById('cnt-'+id);
     if(el)_uploadObserver.observe(el,{childList:true,characterData:true,subtree:true});
   });
+
+  // ── Per-line upload: wire file inputs to enable buttons & show filenames ──
+  const pluLines = [
+    { machine: 'SLITTER', id: 'slitter' },
+    { machine: 'WCTL-1',  id: 'wctl1' },
+    { machine: 'WCTL-2',  id: 'wctl2' }
+  ];
+  pluLines.forEach(({ machine, id }) => {
+    const fileInput = document.getElementById('plu-file-' + id);
+    const label     = document.getElementById('plu-label-' + id);
+    const btn       = document.getElementById('plu-btn-' + id);
+    if (fileInput) {
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files && fileInput.files[0]) {
+          label.textContent = '📄 ' + fileInput.files[0].name;
+          label.classList.add('has-file');
+          btn.disabled = false;
+        } else {
+          label.textContent = '📎 Choose .xlsx file…';
+          label.classList.remove('has-file');
+          btn.disabled = true;
+        }
+      });
+    }
+  });
+
+  // Fetch last sync timestamps for all three lines
+  if (window.supabase) {
+    pluLines.forEach(({ machine, id }) => fetchLastSyncTime(machine, id));
+  }
 });
 </script>
 
